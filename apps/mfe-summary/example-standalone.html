@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MFE Summary - Standalone Example</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .demo-controls {
+            background: white;
+            padding: 20px;
+            margin-bottom: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .demo-controls h2 {
+            margin-top: 0;
+        }
+        .demo-controls button {
+            margin: 5px;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            background: #007bff;
+            color: white;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .demo-controls button:hover {
+            background: #0056b3;
+        }
+        .event-log {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 15px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            max-height: 200px;
+            overflow-y: auto;
+            margin-top: 10px;
+        }
+        .event-log .event {
+            margin: 5px 0;
+            padding: 5px;
+            border-left: 3px solid #4CAF50;
+            padding-left: 10px;
+        }
+        mfe-summary {
+            display: block;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            padding: 20px;
+        }
+    </style>
+</head>
+<body>
+    <h1>MFE Summary - Framework-Agnostic Custom Element</h1>
+
+    <div class="demo-controls">
+        <h2>Demo Controls</h2>
+        <p>Click buttons to navigate within the MFE using its internal router:</p>
+        <button onclick="navigateTo('/')">Overview</button>
+        <button onclick="navigateTo('/details')">Details</button>
+        <button onclick="navigateTo('/analytics')">Analytics</button>
+
+        <hr>
+
+        <p>Theme:</p>
+        <button onclick="setTheme('light')">Light Theme</button>
+        <button onclick="setTheme('dark')">Dark Theme</button>
+
+        <div class="event-log" id="eventLog">
+            <strong>Event Log:</strong>
+        </div>
+    </div>
+
+    <!-- MFE Custom Element with Router -->
+    <mfe-summary
+        id="summaryMFE"
+        use-router="true"
+        route="/"
+        theme="light"
+        user-id-type="EID"
+        user-id-value="E123456"
+        logged-in-user-id-type="HSID"
+        logged-in-user-id-value="HS789012">
+    </mfe-summary>
+
+    <!-- Load the MFE remote entry -->
+    <script type="module">
+        // In production, this would be from CDN:
+        // import('https://cdn.example.com/mfe/summary/v1.0.0/remoteEntry.js')
+        import('./dist/remoteEntry.js').then(() => {
+            // Import and initialize the custom element
+            import('./dist/customElement.js');
+        });
+    </script>
+
+    <script>
+        const mfe = document.getElementById('summaryMFE');
+        const eventLog = document.getElementById('eventLog');
+
+        function navigateTo(route) {
+            mfe.setAttribute('route', route);
+            logEvent(`Navigated to: ${route}`);
+        }
+
+        function setTheme(theme) {
+            mfe.setAttribute('theme', theme);
+            logEvent(`Theme changed to: ${theme}`);
+        }
+
+        function logEvent(message) {
+            const event = document.createElement('div');
+            event.className = 'event';
+            event.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            eventLog.appendChild(event);
+            eventLog.scrollTop = eventLog.scrollHeight;
+        }
+
+        // Listen to custom events from MFE
+        mfe.addEventListener('route-change', (e) => {
+            logEvent(`MFE route changed: ${e.detail.route}`);
+        });
+
+        mfe.addEventListener('summary-data-load', (e) => {
+            logEvent(`MFE data loaded: ${e.detail.metrics?.length || 0} metrics`);
+        });
+
+        logEvent('MFE initialized');
+    </script>
+
+    <div style="margin-top: 40px; padding: 20px; background: white; border-radius: 8px;">
+        <h2>How This Works</h2>
+        <ul>
+            <li><strong>Framework-Agnostic:</strong> This is plain HTML - no React, Vue, or other framework in the host page</li>
+            <li><strong>Memory Router:</strong> The MFE uses TanStack Router with memory history (no URL changes in browser)</li>
+            <li><strong>Custom Events:</strong> The MFE emits <code>route-change</code> events when users navigate internally</li>
+            <li><strong>Attribute Control:</strong> Host page can control the route via <code>route</code> attribute</li>
+            <li><strong>Backwards Compatible:</strong> Remove <code>use-router="true"</code> to use legacy single-page mode</li>
+        </ul>
+
+        <h3>User Identification Attributes:</h3>
+        <ul>
+            <li><strong>user-id-type:</strong> Type of user ID (default: 'EID', can be 'HSID', 'OHID', 'MSID')</li>
+            <li><strong>user-id-value:</strong> The actual ID value (required)</li>
+            <li><strong>logged-in-user-id-type:</strong> Type of logged-in user ID (optional, e.g., 'HSID', 'OHID', 'MSID')</li>
+            <li><strong>logged-in-user-id-value:</strong> Value of logged-in user ID (optional)</li>
+            <li><strong>user-id:</strong> Legacy support - still works for backwards compatibility</li>
+        </ul>
+
+        <h3>Usage in 3rd Party Sites:</h3>
+        <pre style="background: #f5f5f5; padding: 15px; border-radius: 4px; overflow-x: auto;"><code>&lt;!-- Load from CDN --&gt;
+&lt;script type="module" src="https://cdn.example.com/mfe/summary/v1.0.0/remoteEntry.js"&gt;&lt;/script&gt;
+&lt;script type="module"&gt;
+  import('https://cdn.example.com/mfe/summary/v1.0.0/customElement');
+&lt;/script&gt;
+
+&lt;!-- Use the custom element --&gt;
+&lt;mfe-summary
+  use-router="true"
+  route="/analytics"
+  theme="dark"
+  user-id-type="EID"
+  user-id-value="E123456"
+  logged-in-user-id-type="HSID"
+  logged-in-user-id-value="HS789012"&gt;
+&lt;/mfe-summary&gt;
+
+&lt;script&gt;
+  // Listen for navigation events
+  document.querySelector('mfe-summary')
+    .addEventListener('route-change', (e) => {
+      console.log('User navigated to:', e.detail.route);
+      // Optional: sync to analytics, URL params, etc.
+    });
+&lt;/script&gt;</code></pre>
+    </div>
+</body>
+</html>

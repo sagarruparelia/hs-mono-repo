@@ -25,6 +25,7 @@ export default defineConfig(() => ({
       filename: 'remoteEntry.js',
       exposes: {
         './SummaryPage': './src/components/SummaryPage.tsx',
+        './SummaryPageWithRouter': './src/components/SummaryPageWithRouter.tsx',
         './bootstrap': './src/bootstrap.tsx',
         './customElement': './src/ce.tsx',
       },
@@ -40,6 +41,10 @@ export default defineConfig(() => ({
         '@tanstack/react-query': {
           singleton: true,
           requiredVersion: '^5.0.0',
+        },
+        '@tanstack/react-router': {
+          singleton: true,
+          requiredVersion: '^1.0.0',
         },
       },
     }),

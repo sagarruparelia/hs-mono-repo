@@ -23,7 +23,7 @@ export function CallbackPage() {
         <div className="callback-error">
           <div className="error-icon">❌</div>
           <h2>Authentication Failed</h2>
-          <p>{error}</p>
+          <p>{error.message || 'Unknown error'}</p>
           <p className="error-hint">
             Please try logging in again. If the problem persists, contact support.
           </p>

@@ -1,5 +1,5 @@
 import { useAuth } from '@hs-mono-repo/shared-auth';
-import { Link } from 'react-router';
+import { Link } from '@tanstack/react-router';
 import './DashboardPage.css';
 
 /**
