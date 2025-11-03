@@ -1,11 +1,9 @@
-// Uncomment this line to use CSS modules
-// import styles from './app.module.css';
-import NxWelcome from './nx-welcome';
+import SummaryPage from '../components/SummaryPage';
 
 export function App() {
   return (
     <div>
-      <NxWelcome title="mfe-summary" />
+      <SummaryPage />
     </div>
   );
 }

@@ -3,6 +3,7 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react-swc';
 import { nxViteTsPaths } from '@nx/vite/plugins/nx-tsconfig-paths.plugin';
 import { nxCopyAssetsPlugin } from '@nx/vite/plugins/nx-copy-assets.plugin';
+import { federation } from '@module-federation/vite';
 
 export default defineConfig(() => ({
   root: __dirname,
@@ -10,12 +11,38 @@ export default defineConfig(() => ({
   server: {
     port: 4203,
     host: 'localhost',
+    fs: {
+      allow: ['../..'],
+    },
   },
   preview: {
     port: 4203,
     host: 'localhost',
   },
-  plugins: [react(), nxViteTsPaths(), nxCopyAssetsPlugin(['*.md'])],
+  plugins: [
+    federation({
+      name: 'mfe_profile',
+      filename: 'remoteEntry.js',
+      exposes: {
+        './ProfilePage': './src/components/ProfilePage.tsx',
+        './bootstrap': './src/bootstrap.tsx',
+        './customElement': './src/ce.tsx',
+      },
+      shared: {
+        react: {
+          singleton: true,
+          requiredVersion: '^19.0.0',
+        },
+        'react-dom': {
+          singleton: true,
+          requiredVersion: '^19.0.0',
+        },
+      },
+    }),
+    react(),
+    nxViteTsPaths(),
+    nxCopyAssetsPlugin(['*.md']),
+  ],
   // Uncomment this if you are using workers.
   // worker: {
   //  plugins: [ nxViteTsPaths() ],
@@ -24,6 +51,9 @@ export default defineConfig(() => ({
     outDir: '../../dist/apps/mfe-profile',
     emptyOutDir: true,
     reportCompressedSize: true,
+    target: 'esnext',
+    minify: false,
+    cssCodeSplit: false,
     commonjsOptions: {
       transformMixedEsModules: true,
     },

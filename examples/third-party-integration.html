@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Third Party Integration Example</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 2rem;
+    }
+
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+
+    header {
+      background: white;
+      padding: 2rem;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+      margin-bottom: 2rem;
+    }
+
+    header h1 {
+      color: #333;
+      margin-bottom: 0.5rem;
+    }
+
+    header p {
+      color: #666;
+    }
+
+    .controls {
+      background: white;
+      padding: 1.5rem;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+      margin-bottom: 2rem;
+      display: flex;
+      gap: 1rem;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .controls label {
+      font-weight: 600;
+      color: #333;
+    }
+
+    .controls select,
+    .controls button {
+      padding: 0.5rem 1rem;
+      border: 2px solid #667eea;
+      border-radius: 8px;
+      background: white;
+      color: #667eea;
+      font-size: 1rem;
+      cursor: pointer;
+      transition: all 0.3s;
+    }
+
+    .controls button {
+      background: #667eea;
+      color: white;
+    }
+
+    .controls button:hover {
+      background: #764ba2;
+      border-color: #764ba2;
+    }
+
+    .mfe-container {
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+      margin-bottom: 2rem;
+      overflow: hidden;
+    }
+
+    .mfe-header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 1rem 1.5rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .mfe-header h2 {
+      font-size: 1.2rem;
+      margin: 0;
+    }
+
+    .mfe-badge {
+      background: rgba(255, 255, 255, 0.2);
+      padding: 0.25rem 0.75rem;
+      border-radius: 12px;
+      font-size: 0.85rem;
+    }
+
+    .status {
+      background: #e8f5e9;
+      border-left: 4px solid #4caf50;
+      padding: 1rem;
+      margin-bottom: 2rem;
+      border-radius: 4px;
+    }
+
+    .status.error {
+      background: #ffebee;
+      border-left-color: #f44336;
+    }
+
+    .status h3 {
+      margin: 0 0 0.5rem 0;
+      color: #333;
+    }
+
+    .status p {
+      margin: 0;
+      color: #666;
+    }
+
+    .code-block {
+      background: #1e1e1e;
+      color: #d4d4d4;
+      padding: 1.5rem;
+      border-radius: 8px;
+      margin: 2rem 0;
+      overflow-x: auto;
+    }
+
+    .code-block code {
+      font-family: 'Courier New', monospace;
+      font-size: 0.9rem;
+      line-height: 1.6;
+    }
+
+    footer {
+      text-align: center;
+      color: white;
+      margin-top: 2rem;
+      padding: 1rem;
+    }
+
+    .loader {
+      display: inline-block;
+      width: 20px;
+      height: 20px;
+      border: 3px solid rgba(255, 255, 255, 0.3);
+      border-top-color: white;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Third Party Integration Example</h1>
+      <p>This page demonstrates how to integrate micro-frontends into any HTML page without React.</p>
+    </header>
+
+    <div class="status" id="status">
+      <h3><span class="loader"></span> Loading...</h3>
+      <p>Initializing micro-frontends from remote servers...</p>
+    </div>
+
+    <div class="controls">
+      <label for="theme">Theme:</label>
+      <select id="theme">
+        <option value="light">Light</option>
+        <option value="dark">Dark</option>
+      </select>
+
+      <label for="timeRange">Summary Time Range:</label>
+      <select id="timeRange">
+        <option value="week">Week</option>
+        <option value="month" selected>Month</option>
+        <option value="year">Year</option>
+      </select>
+
+      <button onclick="updateMicroFrontends()">Apply Changes</button>
+      <button onclick="unmountAll()">Unmount All</button>
+      <button onclick="remountAll()">Remount All</button>
+    </div>
+
+    <!-- Profile Micro-Frontend -->
+    <div class="mfe-container">
+      <div class="mfe-header">
+        <h2>Profile Page</h2>
+        <span class="mfe-badge">Micro-Frontend</span>
+      </div>
+      <div
+        id="profile-container"
+        data-mfe="profile"
+        data-theme="light"
+        data-user-id="demo-user-123"
+      ></div>
+    </div>
+
+    <!-- Summary Micro-Frontend -->
+    <div class="mfe-container">
+      <div class="mfe-header">
+        <h2>Summary Page</h2>
+        <span class="mfe-badge">Micro-Frontend</span>
+      </div>
+      <div
+        id="summary-container"
+        data-mfe="summary"
+        data-theme="light"
+        data-time-range="month"
+      ></div>
+    </div>
+
+    <div class="code-block">
+      <code>
+// This is how the micro-frontends are loaded on this page:<br>
+<br>
+&lt;!-- Declarative approach using data attributes --&gt;<br>
+&lt;div data-mfe="profile" data-theme="light"&gt;&lt;/div&gt;<br>
+&lt;div data-mfe="summary" data-theme="dark"&gt;&lt;/div&gt;<br>
+<br>
+&lt;!-- Load the remote entry scripts --&gt;<br>
+&lt;script type="module" src="http://localhost:4203/remoteEntry.js"&gt;&lt;/script&gt;<br>
+&lt;script type="module" src="http://localhost:4204/remoteEntry.js"&gt;&lt;/script&gt;<br>
+<br>
+// Or programmatic approach:<br>
+import('http://localhost:4203/bootstrap.js').then(({ mount }) => {<br>
+  const instance = mount(document.getElementById('profile-container'), {<br>
+    theme: 'light',<br>
+    userId: 'user123',<br>
+    onUpdate: (data) => console.log('Profile updated:', data)<br>
+  });<br>
+});<br>
+      </code>
+    </div>
+
+    <footer>
+      <p>Module Federation with Vite | Framework-Agnostic Integration</p>
+      <p>Make sure the MFE servers are running on ports 4203 and 4204</p>
+    </footer>
+  </div>
+
+  <script type="module">
+    // Store instances for unmounting
+    let profileInstance = null;
+    let summaryInstance = null;
+    let isLoaded = false;
+
+    // Load Profile MFE
+    const loadProfile = async () => {
+      try {
+        await import('http://localhost:4203/remoteEntry.js');
+        const { mount } = await import('http://localhost:4203/bootstrap.js');
+
+        const container = document.getElementById('profile-container');
+        const theme = document.getElementById('theme').value;
+
+        profileInstance = mount(container, {
+          theme: theme,
+          userId: 'demo-user-123',
+          onUpdate: (data) => {
+            console.log('Profile updated:', data);
+            showNotification('Profile was updated successfully!');
+          }
+        });
+
+        console.log('✅ Profile MFE loaded successfully');
+      } catch (error) {
+        console.error('❌ Failed to load Profile MFE:', error);
+        showError('Profile MFE failed to load. Is the server running on port 4203?');
+      }
+    };
+
+    // Load Summary MFE
+    const loadSummary = async () => {
+      try {
+        await import('http://localhost:4204/remoteEntry.js');
+        const { mount } = await import('http://localhost:4204/bootstrap.js');
+
+        const container = document.getElementById('summary-container');
+        const theme = document.getElementById('theme').value;
+        const timeRange = document.getElementById('timeRange').value;
+
+        summaryInstance = mount(container, {
+          theme: theme,
+          timeRange: timeRange,
+          userId: 'demo-user-123',
+          onDataLoad: (data) => {
+            console.log('Summary data loaded:', data);
+          }
+        });
+
+        console.log('✅ Summary MFE loaded successfully');
+      } catch (error) {
+        console.error('❌ Failed to load Summary MFE:', error);
+        showError('Summary MFE failed to load. Is the server running on port 4204?');
+      }
+    };
+
+    // Initialize all MFEs
+    const init = async () => {
+      await Promise.all([loadProfile(), loadSummary()]);
+      isLoaded = true;
+      showSuccess('All micro-frontends loaded successfully!');
+    };
+
+    // Update status display
+    const showSuccess = (message) => {
+      const status = document.getElementById('status');
+      status.className = 'status';
+      status.innerHTML = `
+        <h3>✅ Success</h3>
+        <p>${message}</p>
+      `;
+    };
+
+    const showError = (message) => {
+      const status = document.getElementById('status');
+      status.className = 'status error';
+      status.innerHTML = `
+        <h3>❌ Error</h3>
+        <p>${message}</p>
+      `;
+    };
+
+    const showNotification = (message) => {
+      const notification = document.createElement('div');
+      notification.className = 'status';
+      notification.innerHTML = `<p>${message}</p>`;
+      notification.style.position = 'fixed';
+      notification.style.top = '20px';
+      notification.style.right = '20px';
+      notification.style.zIndex = '1000';
+      document.body.appendChild(notification);
+
+      setTimeout(() => {
+        notification.remove();
+      }, 3000);
+    };
+
+    // Global functions for buttons
+    window.updateMicroFrontends = () => {
+      const theme = document.getElementById('theme').value;
+      const timeRange = document.getElementById('timeRange').value;
+
+      // Update data attributes
+      document.getElementById('profile-container').dataset.theme = theme;
+      document.getElementById('summary-container').dataset.theme = theme;
+      document.getElementById('summary-container').dataset.timeRange = timeRange;
+
+      // Remount with new props
+      unmountAll();
+      remountAll();
+
+      showNotification('Settings updated! Micro-frontends remounted.');
+    };
+
+    window.unmountAll = () => {
+      if (profileInstance) profileInstance.unmount();
+      if (summaryInstance) summaryInstance.unmount();
+      profileInstance = null;
+      summaryInstance = null;
+      console.log('All MFEs unmounted');
+      showNotification('All micro-frontends unmounted');
+    };
+
+    window.remountAll = async () => {
+      await init();
+      showNotification('All micro-frontends remounted');
+    };
+
+    // Listen to custom events from MFEs
+    document.getElementById('profile-container').addEventListener('profileUpdate', (event) => {
+      console.log('Received profileUpdate event:', event.detail);
+    });
+
+    document.getElementById('summary-container').addEventListener('summaryDataLoad', (event) => {
+      console.log('Received summaryDataLoad event:', event.detail);
+    });
+
+    // Initialize on load
+    init();
+  </script>
+</body>
+</html>

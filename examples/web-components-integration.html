@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Web Components Integration Example</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+      min-height: 100vh;
+      padding: 2rem;
+    }
+
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+
+    header {
+      background: white;
+      padding: 2rem;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+      margin-bottom: 2rem;
+    }
+
+    header h1 {
+      color: #333;
+      margin-bottom: 0.5rem;
+    }
+
+    header p {
+      color: #666;
+      margin-bottom: 1rem;
+    }
+
+    .badge {
+      display: inline-block;
+      background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+      color: white;
+      padding: 0.5rem 1rem;
+      border-radius: 20px;
+      font-size: 0.9rem;
+      font-weight: 600;
+    }
+
+    .controls {
+      background: white;
+      padding: 1.5rem;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+      margin-bottom: 2rem;
+      display: flex;
+      gap: 1rem;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .controls label {
+      font-weight: 600;
+      color: #333;
+    }
+
+    .controls select,
+    .controls input {
+      padding: 0.5rem 1rem;
+      border: 2px solid #f093fb;
+      border-radius: 8px;
+      background: white;
+      color: #333;
+      font-size: 1rem;
+    }
+
+    .controls button {
+      padding: 0.5rem 1.5rem;
+      border: none;
+      border-radius: 8px;
+      background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+      color: white;
+      font-size: 1rem;
+      cursor: pointer;
+      transition: transform 0.3s;
+    }
+
+    .controls button:hover {
+      transform: scale(1.05);
+    }
+
+    .mfe-container {
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+      margin-bottom: 2rem;
+      overflow: hidden;
+    }
+
+    .mfe-header {
+      background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+      color: white;
+      padding: 1rem 1.5rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .mfe-header h2 {
+      font-size: 1.2rem;
+      margin: 0;
+    }
+
+    .mfe-badge {
+      background: rgba(255, 255, 255, 0.2);
+      padding: 0.25rem 0.75rem;
+      border-radius: 12px;
+      font-size: 0.85rem;
+    }
+
+    .code-block {
+      background: #1e1e1e;
+      color: #d4d4d4;
+      padding: 1.5rem;
+      border-radius: 8px;
+      margin: 2rem 0;
+      overflow-x: auto;
+    }
+
+    .code-block code {
+      font-family: 'Courier New', monospace;
+      font-size: 0.9rem;
+      line-height: 1.6;
+      white-space: pre;
+    }
+
+    .info-box {
+      background: #e3f2fd;
+      border-left: 4px solid #2196f3;
+      padding: 1rem 1.5rem;
+      margin: 2rem 0;
+      border-radius: 4px;
+    }
+
+    .info-box h3 {
+      margin: 0 0 0.5rem 0;
+      color: #1976d2;
+    }
+
+    .info-box ul {
+      margin: 0.5rem 0 0 1.5rem;
+      color: #555;
+    }
+
+    .info-box li {
+      margin: 0.25rem 0;
+    }
+
+    footer {
+      text-align: center;
+      color: white;
+      margin-top: 2rem;
+      padding: 1rem;
+    }
+
+    .event-log {
+      background: white;
+      padding: 1.5rem;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+      margin-bottom: 2rem;
+      max-height: 300px;
+      overflow-y: auto;
+    }
+
+    .event-log h3 {
+      margin: 0 0 1rem 0;
+      color: #333;
+    }
+
+    .event-item {
+      padding: 0.5rem;
+      margin-bottom: 0.5rem;
+      background: #f5f5f5;
+      border-radius: 4px;
+      font-size: 0.9rem;
+      font-family: monospace;
+    }
+
+    .event-item.new {
+      animation: highlight 1s;
+    }
+
+    @keyframes highlight {
+      0% { background: #fff3cd; }
+      100% { background: #f5f5f5; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Web Components Integration Example</h1>
+      <p>Using micro-frontends as native Web Components (Custom Elements)</p>
+      <span class="badge">Framework Agnostic</span>
+      <span class="badge">Standards Based</span>
+    </header>
+
+    <div class="info-box">
+      <h3>What are Web Components?</h3>
+      <p>Web Components are a set of web platform APIs that allow you to create custom, reusable HTML elements. They work in any framework or vanilla JavaScript.</p>
+      <ul>
+        <li><strong>Custom Elements:</strong> Define new HTML tags like <code>&lt;mfe-profile&gt;</code></li>
+        <li><strong>Shadow DOM:</strong> Encapsulated styling and markup (not used here)</li>
+        <li><strong>HTML Templates:</strong> Reusable markup structures</li>
+      </ul>
+    </div>
+
+    <div class="controls">
+      <label for="theme">Theme:</label>
+      <select id="theme">
+        <option value="light">Light</option>
+        <option value="dark">Dark</option>
+      </select>
+
+      <label for="userId">User ID:</label>
+      <input type="text" id="userId" value="demo-user-123" />
+
+      <label for="timeRange">Time Range:</label>
+      <select id="timeRange">
+        <option value="week">Week</option>
+        <option value="month" selected>Month</option>
+        <option value="year">Year</option>
+      </select>
+
+      <button onclick="updateComponents()">Apply Changes</button>
+    </div>
+
+    <!-- Profile Micro-Frontend as Web Component -->
+    <div class="mfe-container">
+      <div class="mfe-header">
+        <h2>Profile Page (Web Component)</h2>
+        <span class="mfe-badge">&lt;mfe-profile&gt;</span>
+      </div>
+      <mfe-profile theme="light" user-id="demo-user-123"></mfe-profile>
+    </div>
+
+    <!-- Summary Micro-Frontend as Web Component -->
+    <div class="mfe-container">
+      <div class="mfe-header">
+        <h2>Summary Page (Web Component)</h2>
+        <span class="mfe-badge">&lt;mfe-summary&gt;</span>
+      </div>
+      <mfe-summary theme="light" time-range="month" user-id="demo-user-123"></mfe-summary>
+    </div>
+
+    <!-- Event Log -->
+    <div class="event-log">
+      <h3>Event Log (Custom Events from Web Components)</h3>
+      <div id="eventLog"></div>
+    </div>
+
+    <div class="code-block">
+      <code>
+&lt;!-- Using Web Components is as simple as HTML tags --&gt;
+
+&lt;!-- Profile Component --&gt;
+&lt;mfe-profile
+  theme="light"
+  user-id="user123"
+&gt;&lt;/mfe-profile&gt;
+
+&lt;!-- Summary Component --&gt;
+&lt;mfe-summary
+  theme="dark"
+  time-range="month"
+  user-id="user123"
+&gt;&lt;/mfe-summary&gt;
+
+&lt;!-- Listen to events --&gt;
+&lt;script&gt;
+  document.querySelector('mfe-profile')
+    .addEventListener('profile-update', (e) => {
+      console.log('Profile updated:', e.detail);
+    });
+
+  document.querySelector('mfe-summary')
+    .addEventListener('summary-data-load', (e) => {
+      console.log('Summary loaded:', e.detail);
+    });
+&lt;/script&gt;
+
+&lt;!-- Load the Web Components --&gt;
+&lt;script type="module"&gt;
+  // Import custom element definitions
+  await import('http://localhost:4203/customElement.js');
+  await import('http://localhost:4204/customElement.js');
+&lt;/script&gt;
+      </code>
+    </div>
+
+    <div class="info-box">
+      <h3>Advantages of Web Components</h3>
+      <ul>
+        <li><strong>Native Browser Support:</strong> Works without any frameworks</li>
+        <li><strong>Encapsulation:</strong> Components are self-contained</li>
+        <li><strong>Reusability:</strong> Use in React, Vue, Angular, or vanilla JS</li>
+        <li><strong>Lifecycle Hooks:</strong> connectedCallback, disconnectedCallback, etc.</li>
+        <li><strong>Reactive Attributes:</strong> Automatically update when attributes change</li>
+      </ul>
+    </div>
+
+    <footer>
+      <p>Web Components + Module Federation = Universal Micro-Frontends</p>
+      <p>Make sure the MFE servers are running on ports 4203 and 4204</p>
+    </footer>
+  </div>
+
+  <script type="module">
+    // Import custom element definitions from the MFEs
+    let componentsLoaded = false;
+
+    const loadComponents = async () => {
+      try {
+        console.log('Loading Web Components...');
+
+        // Load the remote entries first
+        await import('http://localhost:4203/remoteEntry.js');
+        await import('http://localhost:4204/remoteEntry.js');
+
+        // Then import the custom element definitions
+        await import('http://localhost:4203/customElement.js');
+        await import('http://localhost:4204/customElement.js');
+
+        componentsLoaded = true;
+        console.log('✅ Web Components loaded successfully!');
+
+        logEvent('Web Components initialized successfully');
+      } catch (error) {
+        console.error('❌ Failed to load Web Components:', error);
+        logEvent(`Error loading components: ${error.message}`, true);
+      }
+    };
+
+    // Update components with new attributes
+    window.updateComponents = () => {
+      const theme = document.getElementById('theme').value;
+      const userId = document.getElementById('userId').value;
+      const timeRange = document.getElementById('timeRange').value;
+
+      const profileEl = document.querySelector('mfe-profile');
+      const summaryEl = document.querySelector('mfe-summary');
+
+      if (profileEl) {
+        profileEl.setAttribute('theme', theme);
+        profileEl.setAttribute('user-id', userId);
+      }
+
+      if (summaryEl) {
+        summaryEl.setAttribute('theme', theme);
+        summaryEl.setAttribute('time-range', timeRange);
+        summaryEl.setAttribute('user-id', userId);
+      }
+
+      logEvent(`Updated components: theme=${theme}, userId=${userId}, timeRange=${timeRange}`);
+    };
+
+    // Log events
+    const logEvent = (message, isError = false) => {
+      const logDiv = document.getElementById('eventLog');
+      const eventItem = document.createElement('div');
+      eventItem.className = 'event-item new';
+      eventItem.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+      if (isError) eventItem.style.color = 'red';
+
+      logDiv.insertBefore(eventItem, logDiv.firstChild);
+
+      // Keep only last 20 events
+      while (logDiv.children.length > 20) {
+        logDiv.removeChild(logDiv.lastChild);
+      }
+    };
+
+    // Listen to custom events from the Web Components
+    document.addEventListener('profile-update', (event) => {
+      console.log('Profile updated event:', event.detail);
+      logEvent(`Profile updated: ${JSON.stringify(event.detail, null, 2)}`);
+    });
+
+    document.addEventListener('summary-data-load', (event) => {
+      console.log('Summary data loaded event:', event.detail);
+      logEvent(`Summary data loaded: totalActivities=${event.detail.totalActivities}`);
+    });
+
+    // Initialize
+    loadComponents();
+  </script>
+</body>
+</html>
