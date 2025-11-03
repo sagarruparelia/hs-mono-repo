@@ -1,4 +1,7 @@
 import { useState, useEffect } from 'react';
+import { QueryClientProvider } from '@tanstack/react-query';
+import { getSharedQueryClient } from '@hs-mono-repo/shared-api-client';
+import { useSummary } from '../hooks/useSummary';
 import './SummaryPage.css';
 
 export interface SummaryPageProps {
@@ -8,39 +11,33 @@ export interface SummaryPageProps {
   onDataLoad?: (data: any) => void;
 }
 
-interface SummaryData {
-  totalActivities: number;
-  completedTasks: number;
-  activeProjects: number;
-  teamMembers: number;
-  recentActivities: Array<{ id: number; title: string; date: string; type: string }>;
-}
-
-export function SummaryPage({
+function SummaryPageContent({
   userId = 'demo-user',
   theme = 'light',
-  timeRange = 'month',
+  timeRange: initialTimeRange = 'month',
   onDataLoad
 }: SummaryPageProps) {
-  const [summaryData, setSummaryData] = useState<SummaryData>({
-    totalActivities: 156,
-    completedTasks: 89,
-    activeProjects: 12,
-    teamMembers: 8,
-    recentActivities: [
-      { id: 1, title: 'Completed dashboard redesign', date: '2025-01-10', type: 'task' },
-      { id: 2, title: 'Updated API documentation', date: '2025-01-09', type: 'documentation' },
-      { id: 3, title: 'Code review for feature-auth', date: '2025-01-08', type: 'review' },
-      { id: 4, title: 'Team meeting notes published', date: '2025-01-07', type: 'meeting' },
-      { id: 5, title: 'Performance optimization PR merged', date: '2025-01-06', type: 'code' },
-    ],
+  const [selectedRange, setSelectedRange] = useState<'week' | 'month' | 'year'>(initialTimeRange);
+
+  const {
+    summary,
+    isLoading,
+    isError,
+    error,
+    refreshSummary,
+    isRefreshing,
+  } = useSummary({
+    userId,
+    timeRange: selectedRange,
+    limit: 10,
   });
 
-  const [selectedRange, setSelectedRange] = useState(timeRange);
-
+  // Notify parent when data loads
   useEffect(() => {
-    onDataLoad?.(summaryData);
-  }, [summaryData, onDataLoad]);
+    if (summary) {
+      onDataLoad?.(summary);
+    }
+  }, [summary, onDataLoad]);
 
   const getActivityIcon = (type: string) => {
     switch (type) {
@@ -53,9 +50,43 @@ export function SummaryPage({
     }
   };
 
-  const getCompletionRate = () => {
-    return Math.round((summaryData.completedTasks / summaryData.totalActivities) * 100);
-  };
+  // Loading state
+  if (isLoading) {
+    return (
+      <div className={`summary-page summary-page--${theme}`}>
+        <div className="summary-loading">
+          <div className="spinner"></div>
+          <p>Loading summary data...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Error state
+  if (isError) {
+    return (
+      <div className={`summary-page summary-page--${theme}`}>
+        <div className="summary-error">
+          <h2>Error Loading Summary</h2>
+          <p>{error?.message || 'Failed to load summary data'}</p>
+          <button onClick={() => window.location.reload()} className="btn-retry">
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // No summary data
+  if (!summary) {
+    return (
+      <div className={`summary-page summary-page--${theme}`}>
+        <div className="summary-empty">
+          <p>No summary data available</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={`summary-page summary-page--${theme}`} data-user-id={userId}>
@@ -65,68 +96,63 @@ export function SummaryPage({
           <button
             className={selectedRange === 'week' ? 'active' : ''}
             onClick={() => setSelectedRange('week')}
+            disabled={isRefreshing}
           >
             Week
           </button>
           <button
             className={selectedRange === 'month' ? 'active' : ''}
             onClick={() => setSelectedRange('month')}
+            disabled={isRefreshing}
           >
             Month
           </button>
           <button
             className={selectedRange === 'year' ? 'active' : ''}
             onClick={() => setSelectedRange('year')}
+            disabled={isRefreshing}
           >
             Year
+          </button>
+          <button
+            onClick={() => refreshSummary()}
+            className="btn-refresh"
+            disabled={isRefreshing}
+          >
+            {isRefreshing ? '⟳ Refreshing...' : '🔄 Refresh'}
           </button>
         </div>
       </div>
 
       <div className="summary-metrics">
-        <div className="metric-card">
-          <div className="metric-icon">📊</div>
-          <div className="metric-content">
-            <h3>Total Activities</h3>
-            <p className="metric-value">{summaryData.totalActivities}</p>
+        {summary.metrics.map((metric, index) => (
+          <div key={index} className="metric-card">
+            <div className="metric-content">
+              <h3>{metric.label}</h3>
+              <p className="metric-value">
+                {metric.value}
+                {metric.unit && <span className="metric-unit">{metric.unit}</span>}
+              </p>
+              {metric.change !== undefined && (
+                <p className={`metric-change metric-change--${metric.trend || 'stable'}`}>
+                  {metric.change > 0 ? '+' : ''}{metric.change}% {metric.trend}
+                </p>
+              )}
+            </div>
           </div>
-        </div>
-
-        <div className="metric-card">
-          <div className="metric-icon">✅</div>
-          <div className="metric-content">
-            <h3>Completed Tasks</h3>
-            <p className="metric-value">{summaryData.completedTasks}</p>
-            <p className="metric-subtext">{getCompletionRate()}% completion rate</p>
-          </div>
-        </div>
-
-        <div className="metric-card">
-          <div className="metric-icon">📁</div>
-          <div className="metric-content">
-            <h3>Active Projects</h3>
-            <p className="metric-value">{summaryData.activeProjects}</p>
-          </div>
-        </div>
-
-        <div className="metric-card">
-          <div className="metric-icon">👥</div>
-          <div className="metric-content">
-            <h3>Team Members</h3>
-            <p className="metric-value">{summaryData.teamMembers}</p>
-          </div>
-        </div>
+        ))}
       </div>
 
       <div className="recent-activities">
         <h2>Recent Activities</h2>
         <div className="activities-list">
-          {summaryData.recentActivities.map((activity) => (
+          {summary.recentActivities.map((activity) => (
             <div key={activity.id} className="activity-item">
               <span className="activity-icon">{getActivityIcon(activity.type)}</span>
               <div className="activity-details">
                 <p className="activity-title">{activity.title}</p>
-                <p className="activity-date">{new Date(activity.date).toLocaleDateString()}</p>
+                <p className="activity-description">{activity.description}</p>
+                <p className="activity-date">{new Date(activity.timestamp).toLocaleString()}</p>
               </div>
               <span className={`activity-badge activity-badge--${activity.type}`}>
                 {activity.type}
@@ -137,9 +163,20 @@ export function SummaryPage({
       </div>
 
       <div className="summary-footer">
-        <p>Last updated: {new Date().toLocaleString()}</p>
+        <p>Last updated: {summary.lastUpdated ? new Date(summary.lastUpdated).toLocaleString() : 'N/A'}</p>
       </div>
     </div>
+  );
+}
+
+// Wrapper component that provides QueryClient
+export function SummaryPage(props: SummaryPageProps) {
+  const queryClient = getSharedQueryClient();
+
+  return (
+    <QueryClientProvider client={queryClient}>
+      <SummaryPageContent {...props} />
+    </QueryClientProvider>
   );
 }
 

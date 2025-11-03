@@ -37,6 +37,10 @@ export default defineConfig(() => ({
           singleton: true,
           requiredVersion: '^19.0.0',
         },
+        '@tanstack/react-query': {
+          singleton: true,
+          requiredVersion: '^5.0.0',
+        },
       },
     }),
     react(),
