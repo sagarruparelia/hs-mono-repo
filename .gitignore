@@ -49,3 +49,62 @@ vitest.config.*.timestamp*
 
 # Micro-frontend temp directories
 **/.__mf__temp/
+
+# Environment files
+.env.local
+.env.*.local
+.env.production
+*.pem
+*.key
+
+# AWS
+.aws/
+terraform.tfstate
+terraform.tfstate.backup
+.terraform/
+*.tfvars
+!terraform.tfvars.example
+
+# Docker
+.docker/
+
+# Logs
+logs
+*.log
+lerna-debug.log*
+
+# Spring Boot
+HELP.md
+.gradle
+**/build/
+!gradle/wrapper/gradle-wrapper.jar
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+### STS ###
+.apt_generated
+.factorypath
+.springBeans
+.sts4-cache
+bin/
+!**/src/main/**/bin/
+!**/src/test/**/bin/
+
+### IntelliJ IDEA ###
+*.iws
+*.iml
+*.ipr
+out/
+!**/src/main/**/out/
+!**/src/test/**/out/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Secrets
+secrets/
+*.secret
+credentials.json
+service-account.json
