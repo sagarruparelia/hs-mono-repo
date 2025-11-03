@@ -55,7 +55,20 @@
     "reset": "nx reset",
     "update": "nx migrate latest",
     "update:check": "nx migrate latest --interactive",
-    "prepare": "husky install || true"
+    "prepare": "husky install || true",
+    "deploy:profile": "./scripts/deploy-mfe.sh profile $(node -p \"require('./package.json').version\") ${DEPLOY_ENV:-staging}",
+    "deploy:summary": "./scripts/deploy-mfe.sh summary $(node -p \"require('./package.json').version\") ${DEPLOY_ENV:-staging}",
+    "deploy:web-cl": "./scripts/deploy-mfe.sh web-cl $(node -p \"require('./package.json').version\") ${DEPLOY_ENV:-staging}",
+    "deploy:web-hs": "./scripts/deploy-mfe.sh web-hs $(node -p \"require('./package.json').version\") ${DEPLOY_ENV:-staging}",
+    "deploy:all": "npm run deploy:profile && npm run deploy:summary && npm run deploy:web-cl && npm run deploy:web-hs",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down",
+    "docker:logs": "docker-compose logs -f",
+    "docker:build": "docker-compose build",
+    "terraform:init": "cd terraform && terraform init",
+    "terraform:plan": "cd terraform && terraform plan",
+    "terraform:apply": "cd terraform && terraform apply",
+    "terraform:destroy": "cd terraform && terraform destroy"
   },
   "private": true,
   "devDependencies": {

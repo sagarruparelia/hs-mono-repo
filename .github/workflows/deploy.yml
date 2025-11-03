@@ -1,0 +1,348 @@
+name: Deploy to AWS
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+      projects:
+        description: 'Projects to deploy (comma-separated: profile,summary,web-cl,web-hs,all)'
+        required: false
+        default: 'all'
+
+env:
+  NODE_VERSION: '20'
+  JAVA_VERSION: '21'
+
+jobs:
+  # Determine which projects were affected
+  determine-affected:
+    runs-on: ubuntu-latest
+    outputs:
+      affected-projects: ${{ steps.affected.outputs.projects }}
+      should-deploy: ${{ steps.affected.outputs.should-deploy }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Determine affected projects
+        id: affected
+        run: |
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            echo "should-deploy=false" >> $GITHUB_OUTPUT
+            AFFECTED=$(npx nx print-affected --type=app --select=projects --base=origin/${{ github.base_ref }})
+          elif [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "should-deploy=true" >> $GITHUB_OUTPUT
+            if [ "${{ github.event.inputs.projects }}" == "all" ]; then
+              AFFECTED="mfe-profile,mfe-summary,web-cl,web-hs,bff"
+            else
+              AFFECTED="${{ github.event.inputs.projects }}"
+            fi
+          else
+            echo "should-deploy=true" >> $GITHUB_OUTPUT
+            AFFECTED=$(npx nx print-affected --type=app --select=projects --base=origin/main)
+          fi
+          echo "projects=${AFFECTED}" >> $GITHUB_OUTPUT
+          echo "Affected projects: ${AFFECTED}"
+
+  # Lint all projects
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run linting
+        run: npm run lint
+
+      - name: Run type checking
+        run: npm run typecheck
+
+  # Run tests
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm run test:coverage
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./coverage/**/coverage-final.json
+          flags: unittests
+          name: codecov-umbrella
+
+  # Build frontend projects
+  build-frontend:
+    runs-on: ubuntu-latest
+    needs: [lint, test, determine-affected]
+    if: needs.determine-affected.outputs.should-deploy == 'true'
+    strategy:
+      matrix:
+        project: [mfe-profile, mfe-summary, web-cl, web-hs]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Determine environment
+        id: env
+        run: |
+          if [ "${{ github.ref }}" == "refs/heads/main" ] || [ "${{ github.event.inputs.environment }}" == "production" ]; then
+            echo "environment=production" >> $GITHUB_OUTPUT
+          else
+            echo "environment=staging" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build ${{ matrix.project }}
+        run: npm run build:${{ matrix.project }}
+        env:
+          NODE_ENV: production
+          VITE_ENVIRONMENT: ${{ steps.env.outputs.environment }}
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.project }}-build
+          path: dist/apps/${{ matrix.project }}/
+          retention-days: 7
+
+  # Build and push Docker image for BFF
+  build-backend:
+    runs-on: ubuntu-latest
+    needs: [lint, test, determine-affected]
+    if: needs.determine-affected.outputs.should-deploy == 'true' && contains(needs.determine-affected.outputs.affected-projects, 'bff')
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: Build Spring Boot application
+        run: |
+          cd apps/bff
+          mvn clean package -DskipTests
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, tag, and push Docker image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: hs-mono-repo-bff
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -f apps/bff/Dockerfile apps/bff
+          docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+
+  # Deploy to AWS
+  deploy:
+    runs-on: ubuntu-latest
+    needs: [build-frontend, determine-affected]
+    if: needs.determine-affected.outputs.should-deploy == 'true' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop' || github.event_name == 'workflow_dispatch')
+    strategy:
+      matrix:
+        project: [mfe-profile, mfe-summary, web-cl, web-hs]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.project }}-build
+          path: dist/apps/${{ matrix.project }}/
+
+      - name: Determine environment
+        id: env
+        run: |
+          if [ "${{ github.ref }}" == "refs/heads/main" ] || [ "${{ github.event.inputs.environment }}" == "production" ]; then
+            echo "environment=production" >> $GITHUB_OUTPUT
+            echo "bucket_name=hs-mono-repo-${{ matrix.project }}-prod" >> $GITHUB_OUTPUT
+            echo "distribution_id=${{ secrets.CLOUDFRONT_DISTRIBUTION_ID_PROD }}" >> $GITHUB_OUTPUT
+          else
+            echo "environment=staging" >> $GITHUB_OUTPUT
+            echo "bucket_name=hs-mono-repo-${{ matrix.project }}-staging" >> $GITHUB_OUTPUT
+            echo "distribution_id=${{ secrets.CLOUDFRONT_DISTRIBUTION_ID_STAGING }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Sync to S3
+        run: |
+          aws s3 sync dist/apps/${{ matrix.project }}/ s3://${{ steps.env.outputs.bucket_name }}/ \
+            --delete \
+            --cache-control "public, max-age=31536000, immutable" \
+            --exclude "index.html" \
+            --exclude "*.html"
+
+          # HTML files with shorter cache
+          aws s3 sync dist/apps/${{ matrix.project }}/ s3://${{ steps.env.outputs.bucket_name }}/ \
+            --cache-control "public, max-age=0, must-revalidate" \
+            --include "index.html" \
+            --include "*.html"
+
+      - name: Invalidate CloudFront cache
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id ${{ steps.env.outputs.distribution_id }} \
+            --paths "/*"
+
+  # Deploy BFF to ECS
+  deploy-backend:
+    runs-on: ubuntu-latest
+    needs: [build-backend, determine-affected]
+    if: needs.determine-affected.outputs.should-deploy == 'true' && contains(needs.determine-affected.outputs.affected-projects, 'bff')
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Determine environment
+        id: env
+        run: |
+          if [ "${{ github.ref }}" == "refs/heads/main" ] || [ "${{ github.event.inputs.environment }}" == "production" ]; then
+            echo "environment=production" >> $GITHUB_OUTPUT
+            echo "cluster_name=hs-mono-repo-cluster-prod" >> $GITHUB_OUTPUT
+            echo "service_name=hs-mono-repo-bff-service-prod" >> $GITHUB_OUTPUT
+          else
+            echo "environment=staging" >> $GITHUB_OUTPUT
+            echo "cluster_name=hs-mono-repo-cluster-staging" >> $GITHUB_OUTPUT
+            echo "service_name=hs-mono-repo-bff-service-staging" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Update ECS service
+        run: |
+          aws ecs update-service \
+            --cluster ${{ steps.env.outputs.cluster_name }} \
+            --service ${{ steps.env.outputs.service_name }} \
+            --force-new-deployment
+
+      - name: Wait for service stability
+        run: |
+          aws ecs wait services-stable \
+            --cluster ${{ steps.env.outputs.cluster_name }} \
+            --services ${{ steps.env.outputs.service_name }}
+
+  # Smoke tests
+  smoke-test:
+    runs-on: ubuntu-latest
+    needs: [deploy]
+    if: needs.determine-affected.outputs.should-deploy == 'true'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Determine environment
+        id: env
+        run: |
+          if [ "${{ github.ref }}" == "refs/heads/main" ] || [ "${{ github.event.inputs.environment }}" == "production" ]; then
+            echo "url=https://yourapp.example.com" >> $GITHUB_OUTPUT
+          else
+            echo "url=https://staging.example.com" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Run smoke tests
+        run: |
+          # Test Profile MFE
+          curl -f ${{ steps.env.outputs.url }}/mfe/profile/ || exit 1
+
+          # Test Summary MFE
+          curl -f ${{ steps.env.outputs.url }}/mfe/summary/ || exit 1
+
+          # Test Web CL
+          curl -f ${{ steps.env.outputs.url }}/cl/ || exit 1
+
+          # Test Web HS
+          curl -f ${{ steps.env.outputs.url }}/hs/ || exit 1
+
+          # Test API health
+          curl -f ${{ steps.env.outputs.url }}/api/health || exit 1
+
+      - name: Notify success
+        if: success()
+        run: echo "Deployment successful and smoke tests passed!"
+
+      - name: Notify failure
+        if: failure()
+        run: |
+          echo "Smoke tests failed! Consider rolling back."
+          exit 1
