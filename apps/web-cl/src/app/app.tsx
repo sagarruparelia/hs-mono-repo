@@ -1,5 +1,9 @@
-import { Suspense, lazy, useState } from 'react';
-import { Route, Routes, Link } from 'react-router';
+import { Suspense, lazy, useState, useEffect } from 'react';
+import { Route, Routes, Link, useNavigate, useLocation } from 'react-router';
+import { useAuth, ProtectedRoute } from '@hs-mono-repo/shared-auth';
+import LandingPage from './pages/LandingPage';
+import DashboardPage from './pages/DashboardPage';
+import CallbackPage from './pages/CallbackPage';
 import './app.css';
 
 // Lazy load remote modules
@@ -11,28 +15,36 @@ function LoadingFallback() {
   return (
     <div className="loading-container">
       <div className="loading-spinner"></div>
-      <p>Loading micro-frontend...</p>
-    </div>
-  );
-}
-
-// Error boundary fallback
-function ErrorFallback({ error }: { error: Error }) {
-  return (
-    <div className="error-container">
-      <h2>Failed to load micro-frontend</h2>
-      <p>{error.message}</p>
-      <p>Make sure the micro-frontend server is running.</p>
+      <p>Loading...</p>
     </div>
   );
 }
 
 export function App() {
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
+  const { isAuthenticated, isLoading, user, logout } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
 
   const toggleTheme = () => {
     setTheme((prev) => (prev === 'light' ? 'dark' : 'light'));
   };
+
+  // Redirect logic: authenticated users on landing page -> dashboard
+  useEffect(() => {
+    if (!isLoading && isAuthenticated && location.pathname === '/') {
+      navigate('/dashboard', { replace: true });
+    }
+  }, [isAuthenticated, isLoading, location.pathname, navigate]);
+
+  // Show loading state while checking authentication
+  if (isLoading) {
+    return (
+      <div className={`app-container app-container--${theme}`}>
+        <LoadingFallback />
+      </div>
+    );
+  }
 
   return (
     <div className={`app-container app-container--${theme}`}>
@@ -45,65 +57,75 @@ export function App() {
           <button onClick={toggleTheme} className="theme-toggle">
             {theme === 'light' ? '🌙' : '☀️'} Theme
           </button>
+          {isAuthenticated && (
+            <div className="user-info">
+              <span className="user-name">{user?.name || user?.email}</span>
+              <button onClick={logout} className="logout-btn">
+                Sign Out
+              </button>
+            </div>
+          )}
         </div>
       </header>
 
-      <nav className="app-nav">
-        <ul>
-          <li>
-            <Link to="/">Home</Link>
-          </li>
-          <li>
-            <Link to="/profile">Profile (MFE)</Link>
-          </li>
-          <li>
-            <Link to="/summary">Summary (MFE)</Link>
-          </li>
-        </ul>
-      </nav>
+      {isAuthenticated && (
+        <nav className="app-nav">
+          <ul>
+            <li>
+              <Link to="/dashboard">Dashboard</Link>
+            </li>
+            <li>
+              <Link to="/profile">Profile</Link>
+            </li>
+            <li>
+              <Link to="/summary">Summary</Link>
+            </li>
+          </ul>
+        </nav>
+      )}
 
       <main className="app-content">
         <Suspense fallback={<LoadingFallback />}>
           <Routes>
+            {/* Public route - landing page */}
+            <Route path="/" element={<LandingPage />} />
+
+            {/* OAuth callback route - public */}
+            <Route path="/auth/callback" element={<CallbackPage />} />
+
+            {/* Protected routes - require authentication */}
             <Route
-              path="/"
+              path="/dashboard"
               element={
-                <div className="home-page">
-                  <h2>Welcome to Web CL</h2>
-                  <p>This is a shell application that hosts micro-frontends.</p>
-                  <div className="feature-cards">
-                    <div className="feature-card">
-                      <h3>Profile Page</h3>
-                      <p>Dynamically loaded from mfe-profile micro-frontend</p>
-                      <Link to="/profile" className="card-link">
-                        View Profile →
-                      </Link>
-                    </div>
-                    <div className="feature-card">
-                      <h3>Summary Page</h3>
-                      <p>Dynamically loaded from mfe-summary micro-frontend</p>
-                      <Link to="/summary" className="card-link">
-                        View Summary →
-                      </Link>
-                    </div>
-                  </div>
-                </div>
+                <ProtectedRoute>
+                  <DashboardPage />
+                </ProtectedRoute>
               }
             />
             <Route
               path="/profile"
               element={
-                <div className="mfe-wrapper">
-                  <ProfilePage theme={theme} onUpdate={(data) => console.log('Profile updated:', data)} />
-                </div>
+                <ProtectedRoute>
+                  <div className="mfe-wrapper">
+                    <ProfilePage
+                      theme={theme}
+                      onUpdate={(data) => console.log('Profile updated:', data)}
+                    />
+                  </div>
+                </ProtectedRoute>
               }
             />
             <Route
               path="/summary"
               element={
-                <div className="mfe-wrapper">
-                  <SummaryPage theme={theme} onDataLoad={(data) => console.log('Summary loaded:', data)} />
-                </div>
+                <ProtectedRoute>
+                  <div className="mfe-wrapper">
+                    <SummaryPage
+                      theme={theme}
+                      onDataLoad={(data) => console.log('Summary loaded:', data)}
+                    />
+                  </div>
+                </ProtectedRoute>
               }
             />
           </Routes>

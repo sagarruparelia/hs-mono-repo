@@ -1,0 +1,92 @@
+.callback-page {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 60vh;
+  padding: 2rem;
+}
+
+.callback-loading,
+.callback-error {
+  text-align: center;
+  max-width: 500px;
+}
+
+.callback-loading h2,
+.callback-error h2 {
+  font-size: 1.75rem;
+  margin: 1.5rem 0 1rem;
+  color: #333;
+}
+
+.callback-loading p,
+.callback-error p {
+  color: #666;
+  font-size: 1rem;
+  line-height: 1.6;
+}
+
+.spinner {
+  width: 64px;
+  height: 64px;
+  border: 4px solid #e0e0e0;
+  border-top-color: #667eea;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin: 0 auto;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.error-icon {
+  font-size: 4rem;
+  margin-bottom: 1rem;
+}
+
+.error-hint {
+  margin-top: 1rem;
+  font-size: 0.875rem;
+  color: #999;
+}
+
+.back-button {
+  display: inline-block;
+  margin-top: 2rem;
+  padding: 0.75rem 2rem;
+  background: #667eea;
+  color: white;
+  text-decoration: none;
+  border-radius: 8px;
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+
+.back-button:hover {
+  background: #5568d3;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+}
+
+/* Dark theme support */
+.app-container--dark .callback-loading h2,
+.app-container--dark .callback-error h2 {
+  color: #e0e0e0;
+}
+
+.app-container--dark .callback-loading p,
+.app-container--dark .callback-error p {
+  color: #b0b0b0;
+}
+
+.app-container--dark .spinner {
+  border-color: #404040;
+  border-top-color: #90caf9;
+}
+
+.app-container--dark .error-hint {
+  color: #808080;
+}

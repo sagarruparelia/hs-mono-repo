@@ -1,0 +1,149 @@
+.landing-page {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 2rem;
+}
+
+.hero-section {
+  text-align: center;
+  padding: 4rem 2rem;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border-radius: 12px;
+  margin-bottom: 3rem;
+}
+
+.hero-title {
+  font-size: 3rem;
+  font-weight: 700;
+  margin: 0 0 1rem;
+}
+
+.hero-subtitle {
+  font-size: 1.25rem;
+  margin: 0 0 2rem;
+  opacity: 0.95;
+}
+
+.login-button {
+  background: white;
+  color: #667eea;
+  border: none;
+  padding: 1rem 3rem;
+  font-size: 1.125rem;
+  font-weight: 600;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.login-button:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
+}
+
+.login-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.features-section {
+  margin-bottom: 3rem;
+}
+
+.features-section h2 {
+  text-align: center;
+  font-size: 2rem;
+  margin-bottom: 2rem;
+  color: #333;
+}
+
+.feature-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 2rem;
+  margin-top: 2rem;
+}
+
+.feature-item {
+  background: #f8f9fa;
+  padding: 2rem;
+  border-radius: 8px;
+  text-align: center;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.feature-item:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+}
+
+.feature-icon {
+  font-size: 3rem;
+  margin-bottom: 1rem;
+}
+
+.feature-item h3 {
+  font-size: 1.25rem;
+  margin: 0 0 0.75rem;
+  color: #333;
+}
+
+.feature-item p {
+  color: #666;
+  line-height: 1.6;
+  margin: 0;
+}
+
+.info-section {
+  background: #e3f2fd;
+  padding: 2rem;
+  border-radius: 8px;
+  border-left: 4px solid #2196f3;
+}
+
+.info-section h3 {
+  margin-top: 0;
+  color: #1565c0;
+}
+
+.info-section p {
+  color: #424242;
+  line-height: 1.6;
+  margin-bottom: 0;
+}
+
+/* Dark theme support */
+.app-container--dark .landing-page {
+  color: #e0e0e0;
+}
+
+.app-container--dark .features-section h2 {
+  color: #e0e0e0;
+}
+
+.app-container--dark .feature-item {
+  background: #2a2a2a;
+}
+
+.app-container--dark .feature-item h3 {
+  color: #e0e0e0;
+}
+
+.app-container--dark .feature-item p {
+  color: #b0b0b0;
+}
+
+.app-container--dark .info-section {
+  background: #1e3a5f;
+  border-left-color: #42a5f5;
+}
+
+.app-container--dark .info-section h3 {
+  color: #90caf9;
+}
+
+.app-container--dark .info-section p {
+  color: #b0b0b0;
+}

@@ -16,7 +16,8 @@
     "baseUrl": ".",
     "paths": {
       "@hs-mono-repo/shared-ui": ["libs/shared-ui/src/index.ts"],
-      "@hs-mono-repo/shared-api-client": ["libs/shared/api-client/src/index.ts"]
+      "@hs-mono-repo/shared-api-client": ["libs/shared/api-client/src/index.ts"],
+      "@hs-mono-repo/shared-auth": ["libs/shared/auth/src/index.ts"]
     }
   },
   "exclude": ["node_modules", "tmp"]
