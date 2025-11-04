@@ -9,6 +9,7 @@ import org.springframework.stereotype.Repository;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Repository for Document entities in MongoDB
@@ -104,4 +105,14 @@ public interface DocumentRepository extends MongoRepository<UserDocument, String
             String ownerIdValue,
             UserDocument.DocumentStatus status
     );
+
+    /**
+     * Find document by temporary S3 key (for AV callback)
+     */
+    Optional<UserDocument> findByTempS3Key(String tempS3Key);
+
+    /**
+     * Find documents pending AV scan
+     */
+    List<UserDocument> findByAvStatus(UserDocument.AntivirusStatus avStatus);
 }

@@ -78,9 +78,23 @@ public class UserDocument implements Serializable {
     private String sessionId; // For temp files cleanup
     private String tempS3Key; // Temporary S3 location before finalization
 
+    // Antivirus scan status
+    @Indexed
+    private AntivirusStatus avStatus;
+    private String virusName; // If infected, name of virus
+    private Instant avScannedAt; // When AV scan completed
+
     // Audit
     private Instant lastModifiedAt;
     private Instant lastAccessedAt;
+
+    public enum AntivirusStatus {
+        PENDING,      // Waiting for AV scan
+        SCANNING,     // Currently being scanned
+        CLEAN,        // Passed AV scan
+        INFECTED,     // Failed AV scan - contains malware
+        SCAN_ERROR    // AV scan failed due to error
+    }
 
     public enum DocumentCategory {
         MEDICAL_RECORD,

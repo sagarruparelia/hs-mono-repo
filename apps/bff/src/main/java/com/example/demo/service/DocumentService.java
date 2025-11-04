@@ -145,6 +145,9 @@ public class DocumentService {
                 throw new ResourceNotFoundException("File not uploaded to S3: " + tempUserDocument.getTempS3Key());
             }
 
+            // SECURITY: Check antivirus scan status
+            validateAntivirusStatus(tempUserDocument);
+
             // Generate permanent S3 key
             String permanentS3Key = s3Service.generatePermanentS3Key(
                     tempUserDocument.getOwnerIdType(),
@@ -332,7 +335,57 @@ public class DocumentService {
                 .status(UserDocument.DocumentStatus.TEMPORARY)
                 .sessionId(session.getSessionId())
                 .isSensitive(true) // Default: all documents are sensitive
+                .avStatus(UserDocument.AntivirusStatus.PENDING) // Waiting for AV scan
                 .build();
+    }
+
+    /**
+     * Validate antivirus scan status before finalizing document
+     * Prevents infected files from being moved to permanent storage
+     */
+    private void validateAntivirusStatus(UserDocument document) {
+        UserDocument.AntivirusStatus avStatus = document.getAvStatus();
+
+        if (avStatus == null) {
+            // No AV status set - this shouldn't happen
+            log.warn("Document has no AV status: {}", document.getDocumentId());
+            throw new InvalidRequestException("Document has not been scanned for viruses");
+        }
+
+        switch (avStatus) {
+            case CLEAN:
+                // File is safe, proceed with finalization
+                log.info("Document passed AV scan: {}", document.getDocumentId());
+                break;
+
+            case INFECTED:
+                // File contains malware - DO NOT finalize
+                log.error("SECURITY: Attempt to finalize infected document: {} - Virus: {}",
+                    document.getDocumentId(), document.getVirusName());
+                throw new AccessDeniedException("File contains malware: " + document.getVirusName());
+
+            case PENDING:
+                // Still waiting for AV scan
+                log.warn("Document AV scan pending: {}", document.getDocumentId());
+                throw new InvalidRequestException(
+                    "File is still being scanned for viruses. Please try again in a few moments.");
+
+            case SCANNING:
+                // Currently being scanned
+                log.info("Document AV scan in progress: {}", document.getDocumentId());
+                throw new InvalidRequestException(
+                    "File is currently being scanned for viruses. Please try again in a few moments.");
+
+            case SCAN_ERROR:
+                // AV scan failed
+                log.error("AV scan failed for document: {}", document.getDocumentId());
+                throw new InvalidRequestException(
+                    "Virus scan failed. Please contact support or try uploading again.");
+
+            default:
+                log.error("Unknown AV status: {} for document: {}", avStatus, document.getDocumentId());
+                throw new InvalidRequestException("Unknown virus scan status");
+        }
     }
 
     /**
