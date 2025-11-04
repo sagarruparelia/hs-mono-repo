@@ -2,6 +2,8 @@ package com.example.demo.service;
 
 import com.example.demo.model.AccessDecision;
 import com.example.demo.model.UserSession;
+import jakarta.servlet.http.Cookie;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -26,6 +28,7 @@ import java.util.UUID;
 public class SessionService {
 
     private static final String SESSION_KEY_PREFIX = "session:";
+    private static final String SESSION_COOKIE_NAME = "SESSION_ID";
 
     private final RedisTemplate<String, Object> redisTemplate;
     private final int sessionTimeoutMinutes;
@@ -60,6 +63,48 @@ public class SessionService {
 
         log.info("Created session for user: {} (sessionId: {})", userSession.getUserInfo().getId(), sessionId);
         return sessionId;
+    }
+
+    /**
+     * Get session from HTTP request
+     * First checks request attributes (set by SessionValidationFilter),
+     * then falls back to extracting from cookie
+     *
+     * @param request HTTP request
+     * @return Session data if exists and valid
+     */
+    public Optional<UserSession> getSessionFromRequest(HttpServletRequest request) {
+        // First, try to get session from request attribute (set by filter)
+        Object sessionAttr = request.getAttribute("userSession");
+        if (sessionAttr instanceof UserSession) {
+            return Optional.of((UserSession) sessionAttr);
+        }
+
+        // Fallback: Extract session ID from cookie
+        String sessionId = getSessionIdFromCookie(request);
+        if (sessionId != null) {
+            return getSession(sessionId);
+        }
+
+        return Optional.empty();
+    }
+
+    /**
+     * Extract session ID from cookie
+     *
+     * @param request HTTP request
+     * @return Session ID or null
+     */
+    private String getSessionIdFromCookie(HttpServletRequest request) {
+        Cookie[] cookies = request.getCookies();
+        if (cookies != null) {
+            for (Cookie cookie : cookies) {
+                if (SESSION_COOKIE_NAME.equals(cookie.getName())) {
+                    return cookie.getValue();
+                }
+            }
+        }
+        return null;
     }
 
     /**

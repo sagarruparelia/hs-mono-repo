@@ -1,8 +1,10 @@
 package com.example.demo.controller;
 
+import com.example.demo.exception.UnauthorizedException;
 import com.example.demo.model.*;
 import com.example.demo.service.DocumentService;
 import com.example.demo.service.SessionService;
+import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.http.ResponseEntity;
@@ -56,12 +58,12 @@ public class DocumentController {
     @PostMapping("/upload/initiate")
     public ResponseEntity<DocumentUploadResponse> initiateUpload(
             HttpServletRequest request,
-            @RequestBody DocumentUploadRequest uploadRequest
+            @Valid @RequestBody DocumentUploadRequest uploadRequest
     ) {
         log.info("Initiating document upload for {} files", uploadRequest.getFiles().size());
 
         UserSession session = sessionService.getSessionFromRequest(request)
-                .orElseThrow(() -> new RuntimeException("No valid session"));
+                .orElseThrow(() -> new UnauthorizedException("No valid session"));
 
         DocumentUploadResponse response = documentService.initiateUpload(uploadRequest, session);
 
@@ -87,12 +89,12 @@ public class DocumentController {
     @PostMapping("/upload/finalize")
     public ResponseEntity<List<UserDocument>> finalizeUpload(
             HttpServletRequest request,
-            @RequestBody DocumentFinalizeRequest finalizeRequest
+            @Valid @RequestBody DocumentFinalizeRequest finalizeRequest
     ) {
         log.info("Finalizing upload for {} documents", finalizeRequest.getTempDocumentIds().size());
 
         UserSession session = sessionService.getSessionFromRequest(request)
-                .orElseThrow(() -> new RuntimeException("No valid session"));
+                .orElseThrow(() -> new UnauthorizedException("No valid session"));
 
         List<UserDocument> userDocuments = documentService.finalizeUpload(finalizeRequest, session);
 
@@ -119,13 +121,13 @@ public class DocumentController {
     @PostMapping("/search")
     public ResponseEntity<Page<UserDocument>> searchDocuments(
             HttpServletRequest request,
-            @RequestBody DocumentSearchRequest searchRequest
+            @Valid @RequestBody DocumentSearchRequest searchRequest
     ) {
         log.info("Searching documents for owner: {}={}",
                 searchRequest.getOwnerIdType(), searchRequest.getOwnerIdValue());
 
         UserSession session = sessionService.getSessionFromRequest(request)
-                .orElseThrow(() -> new RuntimeException("No valid session"));
+                .orElseThrow(() -> new UnauthorizedException("No valid session"));
 
         Page<UserDocument> documents = documentService.searchDocuments(searchRequest, session);
 
@@ -150,7 +152,7 @@ public class DocumentController {
         log.info("Generating download URL for document: {}", documentId);
 
         UserSession session = sessionService.getSessionFromRequest(request)
-                .orElseThrow(() -> new RuntimeException("No valid session"));
+                .orElseThrow(() -> new UnauthorizedException("No valid session"));
 
         String downloadUrl = documentService.getDownloadUrl(documentId, session);
 
@@ -173,7 +175,7 @@ public class DocumentController {
         log.info("Deleting document: {}", documentId);
 
         UserSession session = sessionService.getSessionFromRequest(request)
-                .orElseThrow(() -> new RuntimeException("No valid session"));
+                .orElseThrow(() -> new UnauthorizedException("No valid session"));
 
         documentService.deleteDocument(documentId, session);
 

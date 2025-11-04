@@ -1,7 +1,11 @@
 package com.example.demo.service;
 
+import com.example.demo.exception.AccessDeniedException;
+import com.example.demo.exception.InvalidRequestException;
+import com.example.demo.exception.ResourceNotFoundException;
 import com.example.demo.model.*;
 import com.example.demo.repository.DocumentRepository;
+import com.example.demo.util.MongoQueryUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -124,21 +128,21 @@ public class DocumentService {
 
         for (String tempDocumentId : request.getTempDocumentIds()) {
             UserDocument tempUserDocument = documentRepository.findById(tempDocumentId)
-                    .orElseThrow(() -> new RuntimeException("Temporary document not found: " + tempDocumentId));
+                    .orElseThrow(() -> new ResourceNotFoundException("Temporary document not found: " + tempDocumentId));
 
             // Verify ownership (user can only finalize their own temp uploads)
             if (!tempUserDocument.getSessionId().equals(session.getSessionId())) {
-                throw new SecurityException("Cannot finalize document from different session");
+                throw new AccessDeniedException("Cannot finalize document from different session");
             }
 
             // Verify document is still temporary
             if (!tempUserDocument.isTemporary()) {
-                throw new RuntimeException("Document already finalized: " + tempDocumentId);
+                throw new InvalidRequestException("Document already finalized: " + tempDocumentId);
             }
 
             // Check if file exists in S3
             if (!s3Service.fileExists(tempUserDocument.getTempS3Key())) {
-                throw new RuntimeException("File not uploaded to S3: " + tempUserDocument.getTempS3Key());
+                throw new ResourceNotFoundException("File not uploaded to S3: " + tempUserDocument.getTempS3Key());
             }
 
             // Generate permanent S3 key
@@ -175,7 +179,7 @@ public class DocumentService {
      */
     public String getDownloadUrl(String documentId, UserSession session) {
         UserDocument userDocument = documentRepository.findById(documentId)
-                .orElseThrow(() -> new RuntimeException("Document not found: " + documentId));
+                .orElseThrow(() -> new ResourceNotFoundException("Document not found: " + documentId));
 
         // Verify access
         validateDocumentAccess(userDocument, session, false);
@@ -212,11 +216,16 @@ public class DocumentService {
 
         // Execute search
         if (request.getSearchQuery() != null && !request.getSearchQuery().isEmpty()) {
+            // Sanitize search query to prevent NoSQL injection
+            String sanitizedQuery = MongoQueryUtil.sanitizeRegexInput(
+                MongoQueryUtil.validateQueryLength(request.getSearchQuery(), 200)
+            );
+
             return documentRepository.searchDocuments(
                     request.getOwnerIdType(),
                     request.getOwnerIdValue(),
                     UserDocument.DocumentStatus.ACTIVE,
-                    request.getSearchQuery(),
+                    sanitizedQuery,
                     pageable
             );
         } else if (request.getCategories() != null && !request.getCategories().isEmpty()) {
@@ -243,7 +252,7 @@ public class DocumentService {
      */
     public void deleteDocument(String documentId, UserSession session) {
         UserDocument userDocument = documentRepository.findById(documentId)
-                .orElseThrow(() -> new RuntimeException("Document not found: " + documentId));
+                .orElseThrow(() -> new ResourceNotFoundException("Document not found: " + documentId));
 
         // Verify access (must be owner or have DAA)
         validateDocumentAccess(userDocument, session, true);
@@ -332,24 +341,24 @@ public class DocumentService {
     private void validateUploadRequest(DocumentUploadRequest request, UserSession session) {
         // Validate number of files
         if (request.getFiles() == null || request.getFiles().isEmpty()) {
-            throw new IllegalArgumentException("No files to upload");
+            throw new InvalidRequestException("No files to upload");
         }
 
         if (request.getFiles().size() > MAX_FILES_PER_UPLOAD) {
-            throw new IllegalArgumentException("Cannot upload more than " + MAX_FILES_PER_UPLOAD + " files at once");
+            throw new InvalidRequestException("Cannot upload more than " + MAX_FILES_PER_UPLOAD + " files at once");
         }
 
         // Validate each file
         for (DocumentUploadRequest.FileUploadInfo fileInfo : request.getFiles()) {
             // Check file size
             if (fileInfo.getFileSize() > MAX_FILE_SIZE) {
-                throw new IllegalArgumentException("File too large: " + fileInfo.getFileName() +
+                throw new InvalidRequestException("File too large: " + fileInfo.getFileName() +
                         " (max: " + (MAX_FILE_SIZE / 1024 / 1024) + " MB)");
             }
 
             // Check content type
             if (!ALLOWED_CONTENT_TYPES.contains(fileInfo.getContentType().toLowerCase())) {
-                throw new IllegalArgumentException("Unsupported file type: " + fileInfo.getContentType());
+                throw new InvalidRequestException("Unsupported file type: " + fileInfo.getContentType());
             }
         }
 
@@ -365,7 +374,7 @@ public class DocumentService {
             // Check if user has DAA access for this owner
             AccessDecision decision = session.getAccessDecision();
             if (decision == null) {
-                throw new SecurityException("Access decision not available");
+                throw new AccessDeniedException("Access decision not available");
             }
 
             boolean hasDAA = decision.getViewableMembers().stream()
@@ -375,7 +384,7 @@ public class DocumentService {
                     );
 
             if (!hasDAA) {
-                throw new SecurityException("No DAA access to upload documents for this member");
+                throw new AccessDeniedException("No DAA access to upload documents for this member");
             }
         }
     }
@@ -398,24 +407,24 @@ public class DocumentService {
         // Viewing someone else's document
         AccessDecision decision = session.getAccessDecision();
         if (decision == null) {
-            throw new SecurityException("Access decision not available");
+            throw new AccessDeniedException("Access decision not available");
         }
 
         // Find member in viewable list
         SupportedMember member = decision.getViewableMembers().stream()
                 .filter(m -> m.getEid().equals(userDocument.getOwnerIdValue()))
                 .findFirst()
-                .orElseThrow(() -> new SecurityException("No access to this member's documents"));
+                .orElseThrow(() -> new AccessDeniedException("No access to this member's documents"));
 
         // Check if has DAA (for write operations)
         if (requireDAA && !Boolean.TRUE.equals(member.getHasDigitalAccountAccess())) {
-            throw new SecurityException("No DAA access for this member");
+            throw new AccessDeniedException("No DAA access for this member");
         }
 
         // Check if document is sensitive (requires ROI)
         if (Boolean.TRUE.equals(userDocument.getIsSensitive())
                 && !Boolean.TRUE.equals(member.getHasSensitiveDataAccess())) {
-            throw new SecurityException("No ROI access for sensitive documents");
+            throw new AccessDeniedException("No ROI access for sensitive documents");
         }
     }
 
@@ -436,18 +445,18 @@ public class DocumentService {
         // Searching someone else's documents
         AccessDecision decision = session.getAccessDecision();
         if (decision == null) {
-            throw new SecurityException("Access decision not available");
+            throw new AccessDeniedException("Access decision not available");
         }
 
         // Find member in viewable list
         SupportedMember member = decision.getViewableMembers().stream()
                 .filter(m -> m.getEid().equals(ownerIdValue))
                 .findFirst()
-                .orElseThrow(() -> new SecurityException("No access to this member's documents"));
+                .orElseThrow(() -> new AccessDeniedException("No access to this member's documents"));
 
         // If requesting sensitive documents, must have ROI
         if (includeSensitive && !Boolean.TRUE.equals(member.getHasSensitiveDataAccess())) {
-            throw new SecurityException("No ROI access for sensitive documents");
+            throw new AccessDeniedException("No ROI access for sensitive documents");
         }
     }
 }

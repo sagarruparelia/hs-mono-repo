@@ -73,6 +73,31 @@ public class UserInfo implements Serializable {
     private String locale;
 
     /**
+     * User's preferred username (username claim from ID token)
+     */
+    private String preferredUsername;
+
+    /**
+     * User's ID type (HSID, EID, OHID, MSID)
+     */
+    private String idType;
+
+    /**
+     * User's ID value (the actual ID)
+     */
+    private String idValue;
+
+    /**
+     * User's first name
+     */
+    private String firstName;
+
+    /**
+     * User's last name
+     */
+    private String lastName;
+
+    /**
      * Additional custom claims from ID token
      */
     private java.util.Map<String, Object> customClaims;

@@ -11,20 +11,20 @@ spring:
         cookie:
           http-only: true
           secure: true
-          same-site: lax
+          same-site: strict
           max-age: 30m
 
   # MongoDB Configuration
   data:
     mongodb:
-      uri: ${SPRING_DATA_MONGODB_URI:mongodb://admin:password123@localhost:27017/hs_mono_repo?authSource=admin}
+      uri: ${SPRING_DATA_MONGODB_URI:mongodb://localhost:27017/hs_mono_repo?authSource=admin}
       database: ${SPRING_DATA_MONGODB_DATABASE:hs_mono_repo}
 
     # Redis Configuration
     redis:
       host: ${SPRING_DATA_REDIS_HOST:localhost}
       port: ${SPRING_DATA_REDIS_PORT:6379}
-      password: ${SPRING_DATA_REDIS_PASSWORD:redis123}
+      password: ${SPRING_DATA_REDIS_PASSWORD:}
       timeout: 2000ms
       lettuce:
         pool:
