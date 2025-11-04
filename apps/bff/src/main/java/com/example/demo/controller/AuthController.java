@@ -1,6 +1,7 @@
 package com.example.demo.controller;
 
 import com.example.demo.model.*;
+import com.example.demo.service.AccessDecisionService;
 import com.example.demo.service.OAuth2Service;
 import com.example.demo.service.SessionService;
 import jakarta.servlet.http.Cookie;
@@ -36,17 +37,20 @@ public class AuthController {
     private static final int COOKIE_MAX_AGE = 30 * 60; // 30 minutes
 
     private final OAuth2Service oauth2Service;
+    private final AccessDecisionService accessDecisionService;
     private final SessionService sessionService;
     private final int sessionRefreshThreshold;
     private final String redirectUri;
 
     public AuthController(
             OAuth2Service oauth2Service,
+            AccessDecisionService accessDecisionService,
             SessionService sessionService,
             @Value("${session.refresh.threshold.seconds:300}") int sessionRefreshThreshold,
             @Value("${spring.security.oauth2.client.registration.idp.redirect-uri:http://localhost:4202/auth/callback}") String redirectUri
     ) {
         this.oauth2Service = oauth2Service;
+        this.accessDecisionService = accessDecisionService;
         this.sessionService = sessionService;
         this.sessionRefreshThreshold = sessionRefreshThreshold;
         this.redirectUri = redirectUri;
@@ -87,7 +91,34 @@ public class AuthController {
             // 2. Get user info from IDP
             UserInfo userInfo = oauth2Service.getUserInfo(tokenResponse.access_token);
 
-            // 3. Create session in Redis
+            // 3. Determine access for web-cl using US + PSN flow
+            AccessDecision accessDecision = null;
+            try {
+                // Extract HSID from userInfo custom claims
+                String hsid = extractHSID(userInfo);
+
+                if (hsid != null && !hsid.isEmpty()) {
+                    // Call AccessDecisionService to run the full flow:
+                    // 1. Call US to get biometric info (age, persona)
+                    // 2. If under 18: SELF_ONLY_MINOR
+                    // 3. If 18+ with PR: Call PSN, filter by RRP+DAA
+                    //    - web-cl: SUPPORTING_OTHERS (no self)
+                    //    - web-hs: SELF_AND_OTHERS (includes self)
+                    // 4. If 18+ without PR: SELF_ONLY_ADULT
+                    // Default to WEB_CL for backward compatibility
+                    accessDecision = accessDecisionService.determineAccess(hsid, AccessDecision.ApplicationType.WEB_CL);
+                    log.info("Access decision: {} - {}",
+                            accessDecision.getAccessMode(),
+                            accessDecision.getDecisionReason());
+                } else {
+                    log.warn("No HSID found in userInfo, skipping access decision");
+                }
+            } catch (Exception e) {
+                // Don't fail login if access decision fails - continue without it
+                log.error("Failed to determine access (continuing with login): {}", e.getMessage());
+            }
+
+            // 4. Create session in Redis
             long accessTokenExpiresAt = System.currentTimeMillis() + (tokenResponse.expires_in * 1000);
 
             UserSession session = UserSession.builder()
@@ -97,6 +128,7 @@ public class AuthController {
                     .refreshToken(tokenResponse.refresh_token)
                     .tokenType(tokenResponse.token_type)
                     .accessTokenExpiresAt(accessTokenExpiresAt)
+                    .accessDecision(accessDecision)  // Add access decision
                     .build();
 
             String sessionId = sessionService.createSession(session);
@@ -241,6 +273,69 @@ public class AuthController {
     }
 
     /**
+     * GET /api/auth/access-decision
+     * Get access decision with optional application type
+     * Query param: app (web-cl or web-hs), defaults to web-cl
+     * Returns complete access determination including viewable members
+     */
+    @GetMapping("/access-decision")
+    public ResponseEntity<AccessDecision> getAccessDecision(
+            HttpServletRequest request,
+            @RequestParam(value = "app", defaultValue = "web-cl") String appType
+    ) {
+        Optional<UserSession> sessionOpt = getSessionFromRequest(request);
+
+        if (sessionOpt.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+
+        // Parse application type
+        AccessDecision.ApplicationType applicationType;
+        try {
+            applicationType = "web-hs".equalsIgnoreCase(appType)
+                    ? AccessDecision.ApplicationType.WEB_HS
+                    : AccessDecision.ApplicationType.WEB_CL;
+        } catch (Exception e) {
+            log.error("Invalid application type: {}", appType);
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
+        }
+
+        UserSession session = sessionOpt.get();
+        AccessDecision accessDecision = session.getAccessDecision();
+
+        // Check if cached decision matches requested app type
+        if (accessDecision != null && accessDecision.getApplicationType() != applicationType) {
+            log.info("Cached decision is for different app type, recalculating");
+            accessDecision = null; // Force recalculation
+        }
+
+        if (accessDecision == null) {
+            // Try to determine access if not already cached
+            try {
+                String hsid = extractHSID(session.getUserInfo());
+
+                if (hsid == null || hsid.isEmpty()) {
+                    log.error("No HSID found in session userInfo");
+                    return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
+                }
+
+                accessDecision = accessDecisionService.determineAccess(hsid, applicationType);
+
+                // Update session with access decision
+                sessionService.updateAccessDecision(session.getSessionId(), accessDecision);
+
+                log.info("Access decision determined and cached for session: {} (app: {})",
+                        session.getSessionId(), applicationType);
+            } catch (Exception e) {
+                log.error("Failed to determine access", e);
+                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+            }
+        }
+
+        return ResponseEntity.ok(accessDecision);
+    }
+
+    /**
      * GET /api/auth/session
      * Get session information
      */
@@ -345,5 +440,29 @@ public class AuthController {
         );
 
         log.info("Tokens refreshed for session: {}", session.getSessionId());
+    }
+
+    /**
+     * Extract HSID from UserInfo
+     * Required for US and PSN calls
+     */
+    private String extractHSID(UserInfo userInfo) {
+        if (userInfo.getCustomClaims() != null) {
+            // Check for hsid claim
+            Object hsid = userInfo.getCustomClaims().get("hsid");
+            if (hsid != null && !hsid.toString().isEmpty()) {
+                return hsid.toString();
+            }
+
+            // Check for member_id if it's actually HSID
+            Object memberId = userInfo.getCustomClaims().get("member_id");
+            if (memberId != null && !memberId.toString().isEmpty()) {
+                return memberId.toString();
+            }
+        }
+
+        // Fallback to user ID (sub claim) if no HSID found
+        log.warn("No HSID found in userInfo custom claims, using sub claim as fallback");
+        return userInfo.getId();
     }
 }

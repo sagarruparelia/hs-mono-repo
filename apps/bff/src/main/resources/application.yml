@@ -62,6 +62,24 @@ spring:
             jwk-set-uri: ${SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_IDP_JWK_SET_URI:https://your-idp.example.com/oauth2/jwks}
             user-name-attribute: sub
 
+# US (User Service) OAuth2 Client Credentials Configuration
+us:
+  oauth2:
+    token-uri: ${US_OAUTH2_TOKEN_URI:https://us.example.com/oauth2/token}
+    biometric-uri: ${US_OAUTH2_BIOMETRIC_URI:https://us.example.com/api/v1/biometric}
+    client-id: ${US_OAUTH2_CLIENT_ID:your-us-client-id}
+    client-secret: ${US_OAUTH2_CLIENT_SECRET:your-us-client-secret}
+    scope: ${US_OAUTH2_SCOPE:us.biometric.read}
+
+# PSN (Provider Service Network) OAuth2 Client Credentials Configuration
+psn:
+  oauth2:
+    token-uri: ${PSN_OAUTH2_TOKEN_URI:https://psn.example.com/oauth2/token}
+    access-level-uri: ${PSN_OAUTH2_ACCESS_LEVEL_URI:https://psn.example.com/api/v1/access-level}
+    client-id: ${PSN_OAUTH2_CLIENT_ID:your-psn-client-id}
+    client-secret: ${PSN_OAUTH2_CLIENT_SECRET:your-psn-client-secret}
+    scope: ${PSN_OAUTH2_SCOPE:psn.access_level.read}
+
 # Custom Session Configuration
 session:
   timeout:
@@ -69,6 +87,19 @@ session:
   refresh:
     threshold:
       seconds: ${SESSION_REFRESH_THRESHOLD_SECONDS:300}
+
+# Cache Configuration
+# US and PSN API responses are cached in Redis for 30 minutes
+# Cache keys:
+#   - us:biometric:{hsid} - Biometric information from US
+#   - psn:access-level:{memberIdType}:{memberIdValue} - Access level from PSN
+cache:
+  us:
+    ttl:
+      minutes: 30
+  psn:
+    ttl:
+      minutes: 30
 
 # Logging Configuration
 logging:

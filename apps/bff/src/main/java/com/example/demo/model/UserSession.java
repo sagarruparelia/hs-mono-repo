@@ -79,6 +79,12 @@ public class UserSession implements Serializable {
     private Instant expiresAt;
 
     /**
+     * Access decision for web-cl
+     * Contains complete access determination including US biometric and PSN access level
+     */
+    private AccessDecision accessDecision;
+
+    /**
      * Check if access token is expired or about to expire
      *
      * @param thresholdSeconds Number of seconds before expiration to consider expired

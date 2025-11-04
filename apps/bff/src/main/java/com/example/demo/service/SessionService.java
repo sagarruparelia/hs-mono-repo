@@ -1,5 +1,6 @@
 package com.example.demo.service;
 
+import com.example.demo.model.AccessDecision;
 import com.example.demo.model.UserSession;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -182,6 +183,24 @@ public class SessionService {
             log.info("Updated tokens for session: {}", sessionId);
         } else {
             log.warn("Cannot update tokens - session not found: {}", sessionId);
+        }
+    }
+
+    /**
+     * Update access decision information in session
+     *
+     * @param sessionId Session ID
+     * @param accessDecision Access decision from AccessDecisionService
+     */
+    public void updateAccessDecision(String sessionId, AccessDecision accessDecision) {
+        Optional<UserSession> sessionOpt = getSession(sessionId);
+        if (sessionOpt.isPresent()) {
+            UserSession session = sessionOpt.get();
+            session.setAccessDecision(accessDecision);
+            updateSession(sessionId, session);
+            log.info("Updated access decision for session: {}", sessionId);
+        } else {
+            log.warn("Cannot update access decision - session not found: {}", sessionId);
         }
     }
 }
