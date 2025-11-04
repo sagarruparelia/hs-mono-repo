@@ -1,0 +1,72 @@
+.document-page {
+  padding: 20px;
+  min-height: 100vh;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+.document-page.dark {
+  background-color: #1a202c;
+  color: #e2e8f0;
+}
+
+.page-header {
+  margin-bottom: 24px;
+}
+
+.page-header h2 {
+  margin: 0;
+  font-size: 32px;
+  font-weight: 700;
+  color: #1a1a1a;
+}
+
+.document-page.dark .page-header h2 {
+  color: #f7fafc;
+}
+
+.tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 24px;
+  border-bottom: 2px solid #e2e8f0;
+}
+
+.document-page.dark .tabs {
+  border-bottom-color: #2d3748;
+}
+
+.tab {
+  padding: 12px 24px;
+  background-color: transparent;
+  border: none;
+  border-bottom: 3px solid transparent;
+  font-size: 16px;
+  font-weight: 500;
+  color: #718096;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.tab:hover {
+  color: #2d3748;
+  background-color: #f7fafc;
+}
+
+.document-page.dark .tab:hover {
+  color: #e2e8f0;
+  background-color: #2d3748;
+}
+
+.tab.active {
+  color: #4299e1;
+  border-bottom-color: #4299e1;
+}
+
+.document-page.dark .tab.active {
+  color: #63b3ed;
+  border-bottom-color: #63b3ed;
+}
+
+.tab-content {
+  padding-top: 24px;
+}

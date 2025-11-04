@@ -1,6 +1,6 @@
 # Module Federation Setup - Complete
 
-This document summarizes the Module Federation setup for the micro-frontends architecture in this monorepo.
+This userDocument summarizes the Module Federation setup for the micro-frontends architecture in this monorepo.
 
 ## What Was Built
 
@@ -229,7 +229,7 @@ function App() {
 ### Programmatic Mount
 ```javascript
 import('http://localhost:4203/bootstrap.js').then(({ mount }) => {
-  const container = document.getElementById('profile');
+  const container = userDocument.getElementById('profile');
   const instance = mount(container, {
     theme: 'dark',
     onUpdate: (data) => console.log(data)
@@ -357,7 +357,7 @@ npx nx e2e web-hs-e2e
 
 For questions or issues:
 1. Check the integration guide
-2. Review this setup document
+2. Review this setup userDocument
 3. Check Nx and Module Federation docs
 4. Contact the development team
 

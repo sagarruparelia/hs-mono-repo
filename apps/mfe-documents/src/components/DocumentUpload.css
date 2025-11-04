@@ -1,0 +1,256 @@
+.userDocument-upload {
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.upload-header {
+  margin-bottom: 24px;
+}
+
+.upload-header h3 {
+  margin: 0 0 8px 0;
+  font-size: 24px;
+  font-weight: 600;
+  color: #1a1a1a;
+}
+
+.owner-info {
+  margin: 0;
+  color: #666;
+  font-size: 14px;
+}
+
+/* Dropzone */
+.dropzone {
+  border: 2px dashed #cbd5e0;
+  border-radius: 8px;
+  padding: 40px 20px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  background-color: #f7fafc;
+}
+
+.dropzone:hover {
+  border-color: #4299e1;
+  background-color: #edf2f7;
+}
+
+.dropzone.active {
+  border-color: #4299e1;
+  background-color: #bee3f8;
+}
+
+.dropzone.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.dropzone-content {
+  pointer-events: none;
+}
+
+.dropzone-icon {
+  font-size: 48px;
+  display: block;
+  margin-bottom: 16px;
+}
+
+.dropzone p {
+  margin: 8px 0;
+  color: #2d3748;
+}
+
+.dropzone-hint {
+  font-size: 14px;
+  color: #718096;
+}
+
+/* File List */
+.file-list {
+  margin-top: 24px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 16px;
+  background-color: #fff;
+}
+
+.file-list h4 {
+  margin: 0 0 16px 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #2d3748;
+}
+
+.file-item {
+  padding: 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  margin-bottom: 8px;
+  background-color: #fff;
+}
+
+.file-item:last-child {
+  margin-bottom: 0;
+}
+
+.file-item.uploading {
+  background-color: #fff5e6;
+  border-color: #ffa500;
+}
+
+.file-item.uploaded {
+  background-color: #e6f7ed;
+  border-color: #38a169;
+}
+
+.file-item.error {
+  background-color: #fee;
+  border-color: #e53e3e;
+}
+
+.file-info {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.file-icon {
+  font-size: 24px;
+  flex-shrink: 0;
+}
+
+.file-details {
+  flex: 1;
+  min-width: 0;
+}
+
+.file-name {
+  font-weight: 500;
+  color: #2d3748;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-meta {
+  font-size: 14px;
+  color: #718096;
+  margin-top: 4px;
+}
+
+.progress-bar {
+  margin-top: 8px;
+  height: 4px;
+  background-color: #e2e8f0;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background-color: #4299e1;
+  transition: width 0.2s ease;
+}
+
+.remove-btn {
+  padding: 4px 12px;
+  background-color: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  font-size: 14px;
+  cursor: pointer;
+  color: #e53e3e;
+}
+
+.remove-btn:hover:not(:disabled) {
+  background-color: #fee;
+  border-color: #e53e3e;
+}
+
+.remove-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Metadata Form */
+.metadata-form {
+  margin-top: 24px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 20px;
+  background-color: #fff;
+}
+
+.metadata-form h4 {
+  margin: 0 0 16px 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #2d3748;
+}
+
+.form-group {
+  margin-bottom: 16px;
+}
+
+.form-group:last-child {
+  margin-bottom: 0;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #2d3748;
+}
+
+.form-group select,
+.form-group textarea,
+.form-group input[type='text'] {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #cbd5e0;
+  border-radius: 6px;
+  font-size: 14px;
+  font-family: inherit;
+  transition: border-color 0.2s ease;
+}
+
+.form-group select:focus,
+.form-group textarea:focus,
+.form-group input[type='text']:focus {
+  outline: none;
+  border-color: #4299e1;
+  box-shadow: 0 0 0 3px rgba(66, 153, 225, 0.1);
+}
+
+.form-group select:disabled,
+.form-group textarea:disabled,
+.form-group input[type='text']:disabled {
+  background-color: #edf2f7;
+  cursor: not-allowed;
+}
+
+.finalize-btn {
+  width: 100%;
+  padding: 12px 24px;
+  background-color: #4299e1;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  margin-top: 20px;
+}
+
+.finalize-btn:hover:not(:disabled) {
+  background-color: #3182ce;
+}
+
+.finalize-btn:disabled {
+  background-color: #cbd5e0;
+  cursor: not-allowed;
+}

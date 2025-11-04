@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document describes the comprehensive access control system for **web-cl** that determines what data a logged-in member can view. The system uses a multi-step flow involving two external OAuth2 systems (US and PSN) with complex persona-based authorization rules.
+This userDocument describes the comprehensive access control system for **web-cl** that determines what data a logged-in member can view. The system uses a multi-step flow involving two external OAuth2 systems (US and PSN) with complex persona-based authorization rules.
 
 ## Core Principle
 

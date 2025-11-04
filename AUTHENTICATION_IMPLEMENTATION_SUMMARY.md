@@ -259,7 +259,7 @@ function App() {
 // 3rd party site embedding MFE
 import { mount } from './mfe-profile/bootstrap.js';
 
-mount(document.getElementById('profile'), {
+mount(userDocument.getElementById('profile'), {
   userId: 'user-123',
   getAccessToken: async () => {
     // 3P's auth implementation

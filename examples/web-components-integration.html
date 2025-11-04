@@ -283,12 +283,12 @@
 
 &lt;!-- Listen to events --&gt;
 &lt;script&gt;
-  document.querySelector('mfe-profile')
+  userDocument.querySelector('mfe-profile')
     .addEventListener('profile-update', (e) => {
       console.log('Profile updated:', e.detail);
     });
 
-  document.querySelector('mfe-summary')
+  userDocument.querySelector('mfe-summary')
     .addEventListener('summary-data-load', (e) => {
       console.log('Summary loaded:', e.detail);
     });
@@ -348,12 +348,12 @@
 
     // Update components with new attributes
     window.updateComponents = () => {
-      const theme = document.getElementById('theme').value;
-      const userId = document.getElementById('userId').value;
-      const timeRange = document.getElementById('timeRange').value;
+      const theme = userDocument.getElementById('theme').value;
+      const userId = userDocument.getElementById('userId').value;
+      const timeRange = userDocument.getElementById('timeRange').value;
 
-      const profileEl = document.querySelector('mfe-profile');
-      const summaryEl = document.querySelector('mfe-summary');
+      const profileEl = userDocument.querySelector('mfe-profile');
+      const summaryEl = userDocument.querySelector('mfe-summary');
 
       if (profileEl) {
         profileEl.setAttribute('theme', theme);
@@ -371,8 +371,8 @@
 
     // Log events
     const logEvent = (message, isError = false) => {
-      const logDiv = document.getElementById('eventLog');
-      const eventItem = document.createElement('div');
+      const logDiv = userDocument.getElementById('eventLog');
+      const eventItem = userDocument.createElement('div');
       eventItem.className = 'event-item new';
       eventItem.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
       if (isError) eventItem.style.color = 'red';
@@ -386,12 +386,12 @@
     };
 
     // Listen to custom events from the Web Components
-    document.addEventListener('profile-update', (event) => {
+    userDocument.addEventListener('profile-update', (event) => {
       console.log('Profile updated event:', event.detail);
       logEvent(`Profile updated: ${JSON.stringify(event.detail, null, 2)}`);
     });
 
-    document.addEventListener('summary-data-load', (event) => {
+    userDocument.addEventListener('summary-data-load', (event) => {
       console.log('Summary data loaded event:', event.detail);
       logEvent(`Summary data loaded: totalActivities=${event.detail.totalActivities}`);
     });

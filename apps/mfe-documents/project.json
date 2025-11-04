@@ -1,0 +1,9 @@
+{
+  "name": "mfe-documents",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "apps/mfe-documents/src",
+  "projectType": "application",
+  "tags": [],
+  "// targets": "to see all targets run: nx show project mfe-documents --web",
+  "targets": {}
+}

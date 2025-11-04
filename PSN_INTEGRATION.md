@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document describes the integration between the BFF and PSN (Provider Service Network) to retrieve access level information for logged-in members. The integration uses OAuth2 client credentials flow for machine-to-machine authentication.
+This userDocument describes the integration between the BFF and PSN (Provider Service Network) to retrieve access level information for logged-in members. The integration uses OAuth2 client credentials flow for machine-to-machine authentication.
 
 ## Architecture
 

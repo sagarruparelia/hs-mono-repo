@@ -1,6 +1,6 @@
 # NPM Scripts Guide
 
-This document describes all available npm scripts for the monorepo.
+This userDocument describes all available npm scripts for the monorepo.
 
 ## Quick Start
 

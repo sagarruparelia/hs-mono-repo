@@ -155,7 +155,7 @@ interface SummaryPageWithRouterProps {
 
 <script>
   // Listen for navigation
-  document.querySelector('mfe-summary')
+  userDocument.querySelector('mfe-summary')
     .addEventListener('route-change', (e) => {
       // Host can react to MFE navigation
       console.log('User navigated to:', e.detail.route);

@@ -241,7 +241,7 @@
 <br>
 // Or programmatic approach:<br>
 import('http://localhost:4203/bootstrap.js').then(({ mount }) => {<br>
-  const instance = mount(document.getElementById('profile-container'), {<br>
+  const instance = mount(userDocument.getElementById('profile-container'), {<br>
     theme: 'light',<br>
     userId: 'user123',<br>
     onUpdate: (data) => console.log('Profile updated:', data)<br>
@@ -268,8 +268,8 @@ import('http://localhost:4203/bootstrap.js').then(({ mount }) => {<br>
         await import('http://localhost:4203/remoteEntry.js');
         const { mount } = await import('http://localhost:4203/bootstrap.js');
 
-        const container = document.getElementById('profile-container');
-        const theme = document.getElementById('theme').value;
+        const container = userDocument.getElementById('profile-container');
+        const theme = userDocument.getElementById('theme').value;
 
         profileInstance = mount(container, {
           theme: theme,
@@ -293,9 +293,9 @@ import('http://localhost:4203/bootstrap.js').then(({ mount }) => {<br>
         await import('http://localhost:4204/remoteEntry.js');
         const { mount } = await import('http://localhost:4204/bootstrap.js');
 
-        const container = document.getElementById('summary-container');
-        const theme = document.getElementById('theme').value;
-        const timeRange = document.getElementById('timeRange').value;
+        const container = userDocument.getElementById('summary-container');
+        const theme = userDocument.getElementById('theme').value;
+        const timeRange = userDocument.getElementById('timeRange').value;
 
         summaryInstance = mount(container, {
           theme: theme,
@@ -322,7 +322,7 @@ import('http://localhost:4203/bootstrap.js').then(({ mount }) => {<br>
 
     // Update status display
     const showSuccess = (message) => {
-      const status = document.getElementById('status');
+      const status = userDocument.getElementById('status');
       status.className = 'status';
       status.innerHTML = `
         <h3>✅ Success</h3>
@@ -331,7 +331,7 @@ import('http://localhost:4203/bootstrap.js').then(({ mount }) => {<br>
     };
 
     const showError = (message) => {
-      const status = document.getElementById('status');
+      const status = userDocument.getElementById('status');
       status.className = 'status error';
       status.innerHTML = `
         <h3>❌ Error</h3>
@@ -340,14 +340,14 @@ import('http://localhost:4203/bootstrap.js').then(({ mount }) => {<br>
     };
 
     const showNotification = (message) => {
-      const notification = document.createElement('div');
+      const notification = userDocument.createElement('div');
       notification.className = 'status';
       notification.innerHTML = `<p>${message}</p>`;
       notification.style.position = 'fixed';
       notification.style.top = '20px';
       notification.style.right = '20px';
       notification.style.zIndex = '1000';
-      document.body.appendChild(notification);
+      userDocument.body.appendChild(notification);
 
       setTimeout(() => {
         notification.remove();
@@ -356,13 +356,13 @@ import('http://localhost:4203/bootstrap.js').then(({ mount }) => {<br>
 
     // Global functions for buttons
     window.updateMicroFrontends = () => {
-      const theme = document.getElementById('theme').value;
-      const timeRange = document.getElementById('timeRange').value;
+      const theme = userDocument.getElementById('theme').value;
+      const timeRange = userDocument.getElementById('timeRange').value;
 
       // Update data attributes
-      document.getElementById('profile-container').dataset.theme = theme;
-      document.getElementById('summary-container').dataset.theme = theme;
-      document.getElementById('summary-container').dataset.timeRange = timeRange;
+      userDocument.getElementById('profile-container').dataset.theme = theme;
+      userDocument.getElementById('summary-container').dataset.theme = theme;
+      userDocument.getElementById('summary-container').dataset.timeRange = timeRange;
 
       // Remount with new props
       unmountAll();
@@ -386,11 +386,11 @@ import('http://localhost:4203/bootstrap.js').then(({ mount }) => {<br>
     };
 
     // Listen to custom events from MFEs
-    document.getElementById('profile-container').addEventListener('profileUpdate', (event) => {
+    userDocument.getElementById('profile-container').addEventListener('profileUpdate', (event) => {
       console.log('Received profileUpdate event:', event.detail);
     });
 
-    document.getElementById('summary-container').addEventListener('summaryDataLoad', (event) => {
+    userDocument.getElementById('summary-container').addEventListener('summaryDataLoad', (event) => {
       console.log('Received summaryDataLoad event:', event.detail);
     });
 

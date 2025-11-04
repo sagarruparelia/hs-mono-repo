@@ -195,12 +195,12 @@ apps/web-hs/src/routes/
 
 <script>
   // Listen for navigation
-  document.querySelector('mfe-summary')
+  userDocument.querySelector('mfe-summary')
     .addEventListener('route-change', (e) => {
       console.log('Summary navigated to:', e.detail.route);
     });
 
-  document.querySelector('mfe-profile')
+  userDocument.querySelector('mfe-profile')
     .addEventListener('route-change', (e) => {
       console.log('Profile navigated to:', e.detail.route);
     });
@@ -329,7 +329,7 @@ element.addEventListener('profile-update', (e) => {
 ### **Primary Guides:**
 - `/apps/mfe-summary/ROUTING.md` - Complete routing guide for Summary MFE
 - `/MFE_CHILD_ROUTING_SUMMARY.md` - Original implementation overview
-- `/CHILD_ROUTING_COMPLETE.md` - This document
+- `/CHILD_ROUTING_COMPLETE.md` - This userDocument
 
 ### **Quick Reference:**
 

@@ -84,7 +84,7 @@ class SecurityService {
 
 **Recommendation**:
 - Consider PostgreSQL for transactional data requiring ACID compliance
-- Use MongoDB for flexible schema and document storage
+- Use MongoDB for flexible schema and userDocument storage
 - Implement CQRS pattern with event sourcing for audit trail
 - Add Redis for session management and caching
 

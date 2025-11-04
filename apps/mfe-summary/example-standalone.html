@@ -105,8 +105,8 @@
     </script>
 
     <script>
-        const mfe = document.getElementById('summaryMFE');
-        const eventLog = document.getElementById('eventLog');
+        const mfe = userDocument.getElementById('summaryMFE');
+        const eventLog = userDocument.getElementById('eventLog');
 
         function navigateTo(route) {
             mfe.setAttribute('route', route);
@@ -119,7 +119,7 @@
         }
 
         function logEvent(message) {
-            const event = document.createElement('div');
+            const event = userDocument.createElement('div');
             event.className = 'event';
             event.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
             eventLog.appendChild(event);
@@ -177,7 +177,7 @@
 
 &lt;script&gt;
   // Listen for navigation events
-  document.querySelector('mfe-summary')
+  userDocument.querySelector('mfe-summary')
     .addEventListener('route-change', (e) => {
       console.log('User navigated to:', e.detail.route);
       // Optional: sync to analytics, URL params, etc.

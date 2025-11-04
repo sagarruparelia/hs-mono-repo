@@ -130,7 +130,7 @@ function App() {
 
 ```javascript
 import('http://localhost:4203/bootstrap.js').then(({ mount }) => {
-  const instance = mount(document.getElementById('container'), {
+  const instance = mount(userDocument.getElementById('container'), {
     theme: 'dark',
     onUpdate: (data) => console.log(data)
   });

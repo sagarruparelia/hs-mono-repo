@@ -62,7 +62,7 @@ The MFE exposes three routes:
 
 **Events:**
 ```javascript
-const mfe = document.querySelector('mfe-summary');
+const mfe = userDocument.querySelector('mfe-summary');
 
 // Listen for route changes
 mfe.addEventListener('route-change', (e) => {
@@ -274,11 +274,11 @@ Custom element automatically falls back to legacy mode if `use-router` attribute
 
     <script>
         function showSummary(route) {
-            document.getElementById('summary').setAttribute('route', route);
+            userDocument.getElementById('summary').setAttribute('route', route);
         }
 
         // Sync MFE navigation to URL
-        document.getElementById('summary').addEventListener('route-change', (e) => {
+        userDocument.getElementById('summary').addEventListener('route-change', (e) => {
             const params = new URLSearchParams();
             params.set('view', e.detail.route);
             history.pushState(null, '', '?' + params.toString());

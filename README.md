@@ -154,7 +154,7 @@ const ProfilePage = lazy(() => import('mfe_profile/ProfilePage'));
 <div id="profile"></div>
 <script type="module">
   import('http://localhost:4203/bootstrap.js').then(({ mount }) => {
-    mount(document.getElementById('profile'), { theme: 'dark' });
+    mount(userDocument.getElementById('profile'), { theme: 'dark' });
   });
 </script>
 ```

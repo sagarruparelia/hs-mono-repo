@@ -225,7 +225,7 @@ let unmountFn = null;
 
 onMounted(async () => {
   // Load the remote entry
-  const script = document.createElement('script');
+  const script = userDocument.createElement('script');
   script.src = 'http://localhost:4203/remoteEntry.js';
   script.type = 'module';
 
@@ -243,7 +243,7 @@ onMounted(async () => {
     unmountFn = instance.unmount;
   };
 
-  document.head.appendChild(script);
+  userDocument.head.appendChild(script);
 });
 
 onUnmounted(() => {
@@ -300,7 +300,7 @@ export class ProfileMfeComponent implements OnInit, OnDestroy {
 
   async ngOnInit() {
     // Dynamically load the remote entry
-    const script = document.createElement('script');
+    const script = userDocument.createElement('script');
     script.src = 'http://localhost:4203/remoteEntry.js';
     script.type = 'module';
 
@@ -318,7 +318,7 @@ export class ProfileMfeComponent implements OnInit, OnDestroy {
       this.unmountFn = instance.unmount;
     };
 
-    document.head.appendChild(script);
+    userDocument.head.appendChild(script);
   }
 
   ngOnDestroy() {
@@ -405,7 +405,7 @@ For more control, use the JavaScript API:
     // Load Profile MFE
     import('http://localhost:4203/remoteEntry.js').then(async () => {
       const { mount } = await import('http://localhost:4203/bootstrap.js');
-      const profileContainer = document.getElementById('profile-container');
+      const profileContainer = userDocument.getElementById('profile-container');
 
       const profileInstance = mount(profileContainer, {
         theme: 'light',
@@ -424,7 +424,7 @@ For more control, use the JavaScript API:
     // Load Summary MFE
     import('http://localhost:4204/remoteEntry.js').then(async () => {
       const { mount } = await import('http://localhost:4204/bootstrap.js');
-      const summaryContainer = document.getElementById('summary-container');
+      const summaryContainer = userDocument.getElementById('summary-container');
 
       mount(summaryContainer, {
         theme: 'dark',
@@ -447,7 +447,7 @@ Listen to events from micro-frontends:
 <div id="profile-container" data-mfe="profile" data-theme="light"></div>
 
 <script type="module">
-  const container = document.getElementById('profile-container');
+  const container = userDocument.getElementById('profile-container');
 
   // Listen for profile updates
   container.addEventListener('profileUpdate', (event) => {
@@ -496,7 +496,7 @@ Mounts the micro-frontend to a DOM element.
 
 **Example:**
 ```javascript
-const instance = mount(document.getElementById('container'), {
+const instance = mount(userDocument.getElementById('container'), {
   theme: 'dark',
   userId: 'user123'
 });
