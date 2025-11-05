@@ -7,6 +7,14 @@
         "nx",
         "mcp"
       ]
+    },
+    "spring-docs": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@enokdev/springdocs-mcp"
+      ]
     }
   }
 }

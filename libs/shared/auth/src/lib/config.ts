@@ -71,10 +71,10 @@ export const authApiEndpoints = {
 // IDP endpoints (used for direct browser redirects)
 export const idpEndpoints = {
   // Authorization endpoint
-  authorize: `${oidcConfig.authority}/oauth2/authorize`,
+  authorize: `${oidcConfig.authority}/OIDC/authorize`,
 
   // Logout endpoint
-  logout: `${oidcConfig.authority}/oauth2/logout`,
+  logout: `${oidcConfig.authority}/OIDC/logout`,
 
   // OIDC discovery endpoint
   wellKnown: `${oidcConfig.authority}/.well-known/openid-configuration`,
