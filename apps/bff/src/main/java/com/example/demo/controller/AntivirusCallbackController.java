@@ -6,13 +6,13 @@ import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import reactor.core.publisher.Mono;
 
 import java.time.Instant;
-import java.util.Optional;
 
 /**
  * Callback endpoint for Lambda AV scanner
- * Receives scan results and updates document status
+ * Receives scan results and updates document status (Reactive)
  */
 @Slf4j
 @RestController
@@ -44,49 +44,46 @@ public class AntivirusCallbackController {
      * }
      */
     @PostMapping
-    public ResponseEntity<Void> handleAVCallback(@RequestBody AVCallbackRequest request) {
+    public Mono<ResponseEntity<Void>> handleAVCallback(@RequestBody AVCallbackRequest request) {
         log.info("Received AV callback for: {}, status: {}", request.getTempS3Key(), request.getAvStatus());
 
         // Find document by temp S3 key
-        Optional<UserDocument> docOpt = documentRepository.findByTempS3Key(request.getTempS3Key());
+        return documentRepository.findByTempS3Key(request.getTempS3Key())
+                .flatMap(document -> {
+                    // Update AV status based on scan result
+                    switch (request.getAvStatus().toLowerCase()) {
+                        case "clean":
+                            document.setAvStatus(UserDocument.AntivirusStatus.CLEAN);
+                            document.setAvScannedAt(Instant.now());
+                            log.info("✅ Document marked CLEAN: {}", document.getDocumentId());
+                            break;
 
-        if (docOpt.isEmpty()) {
-            log.warn("Document not found for temp S3 key: {}", request.getTempS3Key());
-            return ResponseEntity.notFound().build();
-        }
+                        case "infected":
+                            document.setAvStatus(UserDocument.AntivirusStatus.INFECTED);
+                            document.setVirusName(request.getVirusName());
+                            document.setAvScannedAt(Instant.now());
+                            document.setStatus(UserDocument.DocumentStatus.DELETED); // Soft delete infected files
+                            log.error("🚨 Document marked INFECTED: {} - Virus: {}",
+                                    document.getDocumentId(), request.getVirusName());
+                            break;
 
-        UserDocument document = docOpt.get();
+                        case "error":
+                            document.setAvStatus(UserDocument.AntivirusStatus.SCAN_ERROR);
+                            document.setAvScannedAt(Instant.now());
+                            log.error("⚠️ AV scan ERROR for document: {}", document.getDocumentId());
+                            break;
 
-        // Update AV status based on scan result
-        switch (request.getAvStatus().toLowerCase()) {
-            case "clean":
-                document.setAvStatus(UserDocument.AntivirusStatus.CLEAN);
-                document.setAvScannedAt(Instant.now());
-                log.info("✅ Document marked CLEAN: {}", document.getDocumentId());
-                break;
+                        default:
+                            log.warn("Unknown AV status: {}", request.getAvStatus());
+                            return Mono.just(ResponseEntity.badRequest().<Void>build());
+                    }
 
-            case "infected":
-                document.setAvStatus(UserDocument.AntivirusStatus.INFECTED);
-                document.setVirusName(request.getVirusName());
-                document.setAvScannedAt(Instant.now());
-                document.setStatus(UserDocument.DocumentStatus.DELETED); // Soft delete infected files
-                log.error("🚨 Document marked INFECTED: {} - Virus: {}",
-                    document.getDocumentId(), request.getVirusName());
-                break;
-
-            case "error":
-                document.setAvStatus(UserDocument.AntivirusStatus.SCAN_ERROR);
-                document.setAvScannedAt(Instant.now());
-                log.error("⚠️ AV scan ERROR for document: {}", document.getDocumentId());
-                break;
-
-            default:
-                log.warn("Unknown AV status: {}", request.getAvStatus());
-                return ResponseEntity.badRequest().build();
-        }
-
-        documentRepository.save(document);
-
-        return ResponseEntity.ok().build();
+                    return documentRepository.save(document)
+                            .thenReturn(ResponseEntity.ok().<Void>build());
+                })
+                .switchIfEmpty(Mono.defer(() -> {
+                    log.warn("Document not found for temp S3 key: {}", request.getTempS3Key());
+                    return Mono.just(ResponseEntity.notFound().<Void>build());
+                }));
     }
 }

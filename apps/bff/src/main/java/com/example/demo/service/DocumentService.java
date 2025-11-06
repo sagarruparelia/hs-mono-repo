@@ -8,10 +8,14 @@ import com.example.demo.repository.DocumentRepository;
 import com.example.demo.util.MongoQueryUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -20,6 +24,12 @@ import java.util.UUID;
 
 /**
  * Service for managing document metadata and lifecycle
+ *
+ * NOTE: This service uses a hybrid approach for reactive compatibility:
+ * - Public methods return Mono/Flux for reactive streams
+ * - Internal blocking operations run on boundedElastic scheduler
+ * - TODO: Convert S3Service to use S3AsyncClient for full reactive stack
+ * - TODO: Remove blocking operations and use native reactive MongoDB operations
  */
 @Slf4j
 @Service
@@ -53,10 +63,22 @@ public class DocumentService {
     }
 
     /**
-     * Initiate document upload - generate presigned URLs
+     * Initiate document upload - generate presigned URLs (Reactive)
      * Called when user selects files (before clicking "Upload")
      */
-    public DocumentUploadResponse initiateUpload(
+    public Mono<DocumentUploadResponse> initiateUpload(
+            DocumentUploadRequest request,
+            UserSession session
+    ) {
+        return Mono.fromCallable(() -> initiateUploadBlocking(request, session))
+                .subscribeOn(Schedulers.boundedElastic());
+    }
+
+    /**
+     * Initiate document upload - generate presigned URLs (Blocking)
+     * Called when user selects files (before clicking "Upload")
+     */
+    private DocumentUploadResponse initiateUploadBlocking(
             DocumentUploadRequest request,
             UserSession session
     ) {
@@ -94,7 +116,7 @@ public class DocumentService {
                     session
             );
 
-            documentRepository.save(tempUserDocument);
+            documentRepository.save(tempUserDocument).block(); // TODO: Convert to reactive
 
             // Add to response
             uploadInfos.add(DocumentUploadResponse.UploadInfo.builder()
@@ -114,10 +136,22 @@ public class DocumentService {
     }
 
     /**
-     * Finalize document upload - move from temp to permanent storage
+     * Finalize document upload - move from temp to permanent storage (Reactive)
      * Called when user clicks "Upload" button after selecting category
      */
-    public List<UserDocument> finalizeUpload(
+    public Mono<List<UserDocument>> finalizeUpload(
+            DocumentFinalizeRequest request,
+            UserSession session
+    ) {
+        return Mono.fromCallable(() -> finalizeUploadBlocking(request, session))
+                .subscribeOn(Schedulers.boundedElastic());
+    }
+
+    /**
+     * Finalize document upload - move from temp to permanent storage (Blocking)
+     * Called when user clicks "Upload" button after selecting category
+     */
+    private List<UserDocument> finalizeUploadBlocking(
             DocumentFinalizeRequest request,
             UserSession session
     ) {
@@ -128,6 +162,7 @@ public class DocumentService {
 
         for (String tempDocumentId : request.getTempDocumentIds()) {
             UserDocument tempUserDocument = documentRepository.findById(tempDocumentId)
+                    .blockOptional()
                     .orElseThrow(() -> new ResourceNotFoundException("Temporary document not found: " + tempDocumentId));
 
             // Verify ownership (user can only finalize their own temp uploads)
@@ -168,7 +203,7 @@ public class DocumentService {
             tempUserDocument.setFinalizedAt(Instant.now());
             tempUserDocument.setLastModifiedAt(Instant.now());
 
-            UserDocument finalizedUserDocument = documentRepository.save(tempUserDocument);
+            UserDocument finalizedUserDocument = documentRepository.save(tempUserDocument).block();
             finalizedUserDocuments.add(finalizedUserDocument);
 
             log.info("Finalized document: {} -> {}", tempDocumentId, permanentS3Key);
@@ -178,27 +213,41 @@ public class DocumentService {
     }
 
     /**
-     * Get download URL for a document
+     * Get download URL for a document (Reactive)
      */
-    public String getDownloadUrl(String documentId, UserSession session) {
-        UserDocument userDocument = documentRepository.findById(documentId)
-                .orElseThrow(() -> new ResourceNotFoundException("Document not found: " + documentId));
+    public Mono<String> getDownloadUrl(String documentId, UserSession session) {
+        return documentRepository.findById(documentId)
+                .switchIfEmpty(Mono.error(new ResourceNotFoundException("Document not found: " + documentId)))
+                .flatMap(userDocument -> {
+                    // Verify access
+                    validateDocumentAccess(userDocument, session, false);
 
-        // Verify access
-        validateDocumentAccess(userDocument, session, false);
-
-        // Update last accessed timestamp
-        userDocument.setLastAccessedAt(Instant.now());
-        documentRepository.save(userDocument);
-
-        // Generate presigned download URL
-        return s3Service.generatePresignedDownloadUrl(userDocument.getS3Key());
+                    // Update last accessed timestamp
+                    userDocument.setLastAccessedAt(Instant.now());
+                    return documentRepository.save(userDocument);
+                })
+                .map(userDocument -> {
+                    // Generate presigned download URL (blocking S3 call - TODO: Make S3Service reactive)
+                    return s3Service.generatePresignedDownloadUrl(userDocument.getS3Key());
+                })
+                .subscribeOn(Schedulers.boundedElastic()); // For blocking S3 call
     }
 
     /**
-     * Search documents with filters
+     * Search documents with filters (Reactive)
      */
-    public Page<UserDocument> searchDocuments(
+    public Mono<Page<UserDocument>> searchDocuments(
+            DocumentSearchRequest request,
+            UserSession session
+    ) {
+        return Mono.fromCallable(() -> searchDocumentsBlocking(request, session))
+                .subscribeOn(Schedulers.boundedElastic());
+    }
+
+    /**
+     * Search documents with filters (Blocking)
+     */
+    private Page<UserDocument> searchDocumentsBlocking(
             DocumentSearchRequest request,
             UserSession session
     ) {
@@ -218,57 +267,65 @@ public class DocumentService {
         );
 
         // Execute search
+        List<UserDocument> documents;
         if (request.getSearchQuery() != null && !request.getSearchQuery().isEmpty()) {
             // Sanitize search query to prevent NoSQL injection
             String sanitizedQuery = MongoQueryUtil.sanitizeRegexInput(
                 MongoQueryUtil.validateQueryLength(request.getSearchQuery(), 200)
             );
 
-            return documentRepository.searchDocuments(
+            documents = documentRepository.searchDocuments(
                     request.getOwnerIdType(),
                     request.getOwnerIdValue(),
                     UserDocument.DocumentStatus.ACTIVE,
                     sanitizedQuery,
                     pageable
-            );
+            ).collectList().block();
         } else if (request.getCategories() != null && !request.getCategories().isEmpty()) {
             // TODO: Implement category filter
             // For now, return all active documents
-            return documentRepository.findByOwnerIdTypeAndOwnerIdValueAndStatus(
+            documents = documentRepository.findByOwnerIdTypeAndOwnerIdValueAndStatus(
                     request.getOwnerIdType(),
                     request.getOwnerIdValue(),
                     UserDocument.DocumentStatus.ACTIVE,
                     pageable
-            );
+            ).collectList().block();
         } else {
-            return documentRepository.findByOwnerIdTypeAndOwnerIdValueAndStatus(
+            documents = documentRepository.findByOwnerIdTypeAndOwnerIdValueAndStatus(
                     request.getOwnerIdType(),
                     request.getOwnerIdValue(),
                     UserDocument.DocumentStatus.ACTIVE,
                     pageable
-            );
+            ).collectList().block();
         }
+
+        // Get total count for pagination
+        Long totalCount = documentRepository.countByOwnerIdTypeAndOwnerIdValueAndStatus(
+                request.getOwnerIdType(),
+                request.getOwnerIdValue(),
+                UserDocument.DocumentStatus.ACTIVE
+        ).block();
+
+        return new PageImpl<>(documents, pageable, totalCount != null ? totalCount : 0);
     }
 
     /**
-     * Delete a document (soft delete)
+     * Delete a document (soft delete) - Reactive
      */
-    public void deleteDocument(String documentId, UserSession session) {
-        UserDocument userDocument = documentRepository.findById(documentId)
-                .orElseThrow(() -> new ResourceNotFoundException("Document not found: " + documentId));
+    public Mono<Void> deleteDocument(String documentId, UserSession session) {
+        return documentRepository.findById(documentId)
+                .switchIfEmpty(Mono.error(new ResourceNotFoundException("Document not found: " + documentId)))
+                .flatMap(userDocument -> {
+                    // Verify access (must be owner or have DAA)
+                    validateDocumentAccess(userDocument, session, true);
 
-        // Verify access (must be owner or have DAA)
-        validateDocumentAccess(userDocument, session, true);
-
-        // Soft delete
-        userDocument.setStatus(UserDocument.DocumentStatus.DELETED);
-        userDocument.setDeletedAt(Instant.now());
-        documentRepository.save(userDocument);
-
-        // Optionally: delete from S3 immediately or via scheduled job
-        // s3Service.deleteFile(document.getS3Key());
-
-        log.info("Deleted document: {}", documentId);
+                    // Soft delete
+                    userDocument.setStatus(UserDocument.DocumentStatus.DELETED);
+                    userDocument.setDeletedAt(Instant.now());
+                    return documentRepository.save(userDocument);
+                })
+                .doOnSuccess(doc -> log.info("Deleted document: {}", documentId))
+                .then();
     }
 
     /**
@@ -283,7 +340,7 @@ public class DocumentService {
         List<UserDocument> abandonedDocs = documentRepository.findByStatusAndUploadedAtBefore(
                 UserDocument.DocumentStatus.TEMPORARY,
                 oneHourAgo
-        );
+        ).collectList().block();
 
         log.info("Found {} abandoned temporary documents", abandonedDocs.size());
 

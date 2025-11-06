@@ -1,6 +1,8 @@
 package com.example.demo.service;
 
 import com.example.demo.model.UserInfo;
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
+import io.github.resilience4j.retry.annotation.Retry;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
@@ -12,6 +14,7 @@ import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.reactive.function.BodyInserters;
 import org.springframework.web.reactive.function.client.WebClient;
+import reactor.core.publisher.Mono;
 
 import java.util.*;
 
@@ -53,13 +56,16 @@ public class OAuth2Service {
 
     /**
      * Exchange authorization code for tokens
+     * Circuit breaker protects against IDP failures
      *
      * @param code Authorization code from IDP
      * @param codeVerifier PKCE code verifier
      * @param redirectUri Redirect URI used in authorization request
-     * @return Token response containing access_token, id_token, refresh_token
+     * @return Mono of Token response containing access_token, id_token, refresh_token
      */
-    public TokenResponse exchangeAuthorizationCode(String code, String codeVerifier, String redirectUri) {
+    @CircuitBreaker(name = "oauth2Service", fallbackMethod = "exchangeAuthorizationCodeFallback")
+    @Retry(name = "oauth2Service")
+    public Mono<TokenResponse> exchangeAuthorizationCode(String code, String codeVerifier, String redirectUri) {
         log.info("Exchanging authorization code for tokens");
 
         MultiValueMap<String, String> formData = new LinkedMultiValueMap<>();
@@ -70,30 +76,24 @@ public class OAuth2Service {
         formData.add("client_secret", clientSecret);
         formData.add("code_verifier", codeVerifier);
 
-        try {
-            TokenResponse response = webClient.post()
-                    .uri(tokenUri)
-                    .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_FORM_URLENCODED_VALUE)
-                    .body(BodyInserters.fromFormData(formData))
-                    .retrieve()
-                    .bodyToMono(TokenResponse.class)
-                    .block();
-
-            log.info("Successfully exchanged authorization code for tokens");
-            return response;
-        } catch (Exception e) {
-            log.error("Failed to exchange authorization code", e);
-            throw new RuntimeException("Token exchange failed: " + e.getMessage(), e);
-        }
+        return webClient.post()
+                .uri(tokenUri)
+                .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_FORM_URLENCODED_VALUE)
+                .body(BodyInserters.fromFormData(formData))
+                .retrieve()
+                .bodyToMono(TokenResponse.class)
+                .doOnSuccess(response -> log.info("Successfully exchanged authorization code for tokens"))
+                .doOnError(e -> log.error("Failed to exchange authorization code", e))
+                .onErrorMap(e -> new RuntimeException("Token exchange failed: " + e.getMessage(), e));
     }
 
     /**
      * Refresh access token using refresh token
      *
      * @param refreshToken Refresh token
-     * @return New token response
+     * @return Mono of new token response
      */
-    public TokenResponse refreshAccessToken(String refreshToken) {
+    public Mono<TokenResponse> refreshAccessToken(String refreshToken) {
         log.info("Refreshing access token");
 
         MultiValueMap<String, String> formData = new LinkedMultiValueMap<>();
@@ -102,49 +102,43 @@ public class OAuth2Service {
         formData.add("client_id", clientId);
         formData.add("client_secret", clientSecret);
 
-        try {
-            TokenResponse response = webClient.post()
-                    .uri(tokenUri)
-                    .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_FORM_URLENCODED_VALUE)
-                    .body(BodyInserters.fromFormData(formData))
-                    .retrieve()
-                    .bodyToMono(TokenResponse.class)
-                    .block();
-
-            log.info("Successfully refreshed access token");
-            return response;
-        } catch (Exception e) {
-            log.error("Failed to refresh access token", e);
-            throw new RuntimeException("Token refresh failed: " + e.getMessage(), e);
-        }
+        return webClient.post()
+                .uri(tokenUri)
+                .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_FORM_URLENCODED_VALUE)
+                .body(BodyInserters.fromFormData(formData))
+                .retrieve()
+                .bodyToMono(TokenResponse.class)
+                .doOnSuccess(response -> log.info("Successfully refreshed access token"))
+                .doOnError(e -> log.error("Failed to refresh access token", e))
+                .onErrorMap(e -> new RuntimeException("Token refresh failed: " + e.getMessage(), e));
     }
 
     /**
      * Get user information from IDP
+     * Circuit breaker protects against IDP failures
      *
      * @param accessToken Access token
-     * @return User information
+     * @return Mono of User information
      */
-    public UserInfo getUserInfo(String accessToken) {
+    @CircuitBreaker(name = "oauth2Service", fallbackMethod = "getUserInfoFallback")
+    @Retry(name = "oauth2Service")
+    public Mono<UserInfo> getUserInfo(String accessToken) {
         log.info("Fetching user info from IDP");
 
-        try {
-            Map<String, Object> userInfoMap = webClient.get()
-                    .uri(userInfoUri)
-                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
-                    .retrieve()
-                    .bodyToMono(Map.class)
-                    .block();
-
-            if (userInfoMap == null) {
-                throw new RuntimeException("UserInfo response is null");
-            }
-
-            return mapToUserInfo(userInfoMap);
-        } catch (Exception e) {
-            log.error("Failed to fetch user info", e);
-            throw new RuntimeException("UserInfo fetch failed: " + e.getMessage(), e);
-        }
+        return webClient.get()
+                .uri(userInfoUri)
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+                .retrieve()
+                .bodyToMono(Map.class)
+                .flatMap(userInfoMap -> {
+                    if (userInfoMap == null) {
+                        return Mono.error(new RuntimeException("UserInfo response is null"));
+                    }
+                    return Mono.just(mapToUserInfo(userInfoMap));
+                })
+                .doOnSuccess(userInfo -> log.info("Successfully fetched user info from IDP"))
+                .doOnError(e -> log.error("Failed to fetch user info", e))
+                .onErrorMap(e -> new RuntimeException("UserInfo fetch failed: " + e.getMessage(), e));
     }
 
     /**
@@ -152,8 +146,9 @@ public class OAuth2Service {
      *
      * @param token Token to revoke
      * @param tokenTypeHint Type of token (access_token or refresh_token)
+     * @return Mono of Void
      */
-    public void revokeToken(String token, String tokenTypeHint) {
+    public Mono<Void> revokeToken(String token, String tokenTypeHint) {
         log.info("Revoking token at IDP");
 
         String revokeUri = tokenUri.replace("/token", "/revoke");
@@ -164,20 +159,15 @@ public class OAuth2Service {
         formData.add("client_id", clientId);
         formData.add("client_secret", clientSecret);
 
-        try {
-            webClient.post()
-                    .uri(revokeUri)
-                    .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_FORM_URLENCODED_VALUE)
-                    .body(BodyInserters.fromFormData(formData))
-                    .retrieve()
-                    .bodyToMono(Void.class)
-                    .block();
-
-            log.info("Successfully revoked token");
-        } catch (Exception e) {
-            // Revocation is best effort - don't fail logout if it fails
-            log.warn("Failed to revoke token (continuing anyway): {}", e.getMessage());
-        }
+        return webClient.post()
+                .uri(revokeUri)
+                .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_FORM_URLENCODED_VALUE)
+                .body(BodyInserters.fromFormData(formData))
+                .retrieve()
+                .bodyToMono(Void.class)
+                .doOnSuccess(v -> log.info("Successfully revoked token"))
+                .doOnError(e -> log.warn("Failed to revoke token (continuing anyway): {}", e.getMessage()))
+                .onErrorResume(e -> Mono.empty()); // Revocation is best effort - don't fail logout if it fails
     }
 
     /**
@@ -248,6 +238,24 @@ public class OAuth2Service {
             return Arrays.asList(((String) permissions).split(","));
         }
         return new ArrayList<>();
+    }
+
+    /**
+     * Fallback method for exchangeAuthorizationCode
+     * OAuth2 token exchange is critical - no fallback, fail immediately
+     */
+    private Mono<TokenResponse> exchangeAuthorizationCodeFallback(String code, String codeVerifier, String redirectUri, Exception e) {
+        log.error("Circuit breaker activated for OAuth2 token exchange. IDP unavailable.", e);
+        return Mono.error(new RuntimeException("OAuth2 IDP unavailable - authentication failed", e));
+    }
+
+    /**
+     * Fallback method for getUserInfo
+     * User info fetch is critical - no fallback, fail immediately
+     */
+    private Mono<UserInfo> getUserInfoFallback(String accessToken, Exception e) {
+        log.error("Circuit breaker activated for OAuth2 user info fetch. IDP unavailable.", e);
+        return Mono.error(new RuntimeException("OAuth2 IDP unavailable - user info fetch failed", e));
     }
 
     /**

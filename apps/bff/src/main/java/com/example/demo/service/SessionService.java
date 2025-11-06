@@ -2,16 +2,16 @@ package com.example.demo.service;
 
 import com.example.demo.model.AccessDecision;
 import com.example.demo.model.UserSession;
-import jakarta.servlet.http.Cookie;
-import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.ReactiveRedisTemplate;
+import org.springframework.http.HttpCookie;
+import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.springframework.stereotype.Service;
+import reactor.core.publisher.Mono;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -30,14 +30,14 @@ public class SessionService {
     private static final String SESSION_KEY_PREFIX = "session:";
     private static final String SESSION_COOKIE_NAME = "SESSION_ID";
 
-    private final RedisTemplate<String, Object> redisTemplate;
+    private final ReactiveRedisTemplate<String, Object> reactiveRedisTemplate;
     private final int sessionTimeoutMinutes;
 
     public SessionService(
-            RedisTemplate<String, Object> redisTemplate,
+            ReactiveRedisTemplate<String, Object> reactiveRedisTemplate,
             @Value("${session.timeout.minutes:30}") int sessionTimeoutMinutes
     ) {
-        this.redisTemplate = redisTemplate;
+        this.reactiveRedisTemplate = reactiveRedisTemplate;
         this.sessionTimeoutMinutes = sessionTimeoutMinutes;
     }
 
@@ -45,9 +45,9 @@ public class SessionService {
      * Create new session
      *
      * @param userSession Session data
-     * @return Session ID
+     * @return Mono of Session ID
      */
-    public String createSession(UserSession userSession) {
+    public Mono<String> createSession(UserSession userSession) {
         String sessionId = UUID.randomUUID().toString();
         userSession.setSessionId(sessionId);
         userSession.setCreatedAt(Instant.now());
@@ -55,88 +55,66 @@ public class SessionService {
         userSession.setExpiresAt(Instant.now().plusSeconds(sessionTimeoutMinutes * 60L));
 
         String key = SESSION_KEY_PREFIX + sessionId;
-        redisTemplate.opsForValue().set(
-                key,
-                userSession,
-                Duration.ofMinutes(sessionTimeoutMinutes)
-        );
-
-        log.info("Created session for user: {} (sessionId: {})", userSession.getUserInfo().getId(), sessionId);
-        return sessionId;
+        return reactiveRedisTemplate.opsForValue()
+                .set(key, userSession, Duration.ofMinutes(sessionTimeoutMinutes))
+                .doOnSuccess(success -> log.info("Created session for user: {} (sessionId: {})",
+                        userSession.getUserInfo().getId(), sessionId))
+                .thenReturn(sessionId);
     }
 
     /**
      * Get session from HTTP request
-     * First checks request attributes (set by SessionValidationFilter),
-     * then falls back to extracting from cookie
+     * Extracts session ID from cookie
      *
-     * @param request HTTP request
-     * @return Session data if exists and valid
+     * @param request Reactive HTTP request
+     * @return Mono of Session data if exists and valid
      */
-    public Optional<UserSession> getSessionFromRequest(HttpServletRequest request) {
-        // First, try to get session from request attribute (set by filter)
-        Object sessionAttr = request.getAttribute("userSession");
-        if (sessionAttr instanceof UserSession) {
-            return Optional.of((UserSession) sessionAttr);
-        }
-
-        // Fallback: Extract session ID from cookie
+    public Mono<UserSession> getSessionFromRequest(ServerHttpRequest request) {
+        // Extract session ID from cookie
         String sessionId = getSessionIdFromCookie(request);
-        if (sessionId != null) {
-            return getSession(sessionId);
+        if (sessionId == null) {
+            return Mono.empty();
         }
-
-        return Optional.empty();
+        return getSession(sessionId);
     }
 
     /**
      * Extract session ID from cookie
      *
-     * @param request HTTP request
+     * @param request Reactive HTTP request
      * @return Session ID or null
      */
-    private String getSessionIdFromCookie(HttpServletRequest request) {
-        Cookie[] cookies = request.getCookies();
-        if (cookies != null) {
-            for (Cookie cookie : cookies) {
-                if (SESSION_COOKIE_NAME.equals(cookie.getName())) {
-                    return cookie.getValue();
-                }
-            }
-        }
-        return null;
+    private String getSessionIdFromCookie(ServerHttpRequest request) {
+        HttpCookie cookie = request.getCookies().getFirst(SESSION_COOKIE_NAME);
+        return cookie != null ? cookie.getValue() : null;
     }
 
     /**
      * Get session by ID
      *
      * @param sessionId Session ID
-     * @return Session data if exists and valid
+     * @return Mono of Session data if exists and valid
      */
-    public Optional<UserSession> getSession(String sessionId) {
+    public Mono<UserSession> getSession(String sessionId) {
         if (sessionId == null || sessionId.isEmpty()) {
-            return Optional.empty();
+            return Mono.empty();
         }
 
         String key = SESSION_KEY_PREFIX + sessionId;
-        Object value = redisTemplate.opsForValue().get(key);
+        return reactiveRedisTemplate.opsForValue().get(key)
+                .cast(UserSession.class)
+                .flatMap(session -> {
+                    // Check if session is expired
+                    if (session.isExpired()) {
+                        log.warn("Session expired: {}", sessionId);
+                        return deleteSession(sessionId).then(Mono.empty());
+                    }
 
-        if (value instanceof UserSession session) {
-            // Check if session is expired
-            if (session.isExpired()) {
-                log.warn("Session expired: {}", sessionId);
-                deleteSession(sessionId);
-                return Optional.empty();
-            }
-
-            // Update last accessed time
-            session.updateLastAccessed();
-            updateSession(sessionId, session);
-
-            return Optional.of(session);
-        }
-
-        return Optional.empty();
+                    // Update last accessed time
+                    session.updateLastAccessed();
+                    return updateSession(sessionId, session)
+                            .thenReturn(session);
+                });
     }
 
     /**
@@ -144,58 +122,59 @@ public class SessionService {
      *
      * @param sessionId Session ID
      * @param userSession Updated session data
+     * @return Mono of Void
      */
-    public void updateSession(String sessionId, UserSession userSession) {
+    public Mono<Void> updateSession(String sessionId, UserSession userSession) {
         String key = SESSION_KEY_PREFIX + sessionId;
 
         // Extend TTL on update
-        redisTemplate.opsForValue().set(
-                key,
-                userSession,
-                Duration.ofMinutes(sessionTimeoutMinutes)
-        );
-
-        log.debug("Updated session: {}", sessionId);
+        return reactiveRedisTemplate.opsForValue()
+                .set(key, userSession, Duration.ofMinutes(sessionTimeoutMinutes))
+                .doOnSuccess(success -> log.debug("Updated session: {}", sessionId))
+                .then();
     }
 
     /**
      * Refresh session expiration
      *
      * @param sessionId Session ID
+     * @return Mono of Void
      */
-    public void extendSession(String sessionId) {
-        Optional<UserSession> sessionOpt = getSession(sessionId);
-        if (sessionOpt.isPresent()) {
-            UserSession session = sessionOpt.get();
-            session.setExpiresAt(Instant.now().plusSeconds(sessionTimeoutMinutes * 60L));
-            updateSession(sessionId, session);
-            log.debug("Extended session: {}", sessionId);
-        }
+    public Mono<Void> extendSession(String sessionId) {
+        return getSession(sessionId)
+                .flatMap(session -> {
+                    session.setExpiresAt(Instant.now().plusSeconds(sessionTimeoutMinutes * 60L));
+                    return updateSession(sessionId, session)
+                            .doOnSuccess(v -> log.debug("Extended session: {}", sessionId));
+                });
     }
 
     /**
      * Delete session
      *
      * @param sessionId Session ID
+     * @return Mono of Void
      */
-    public void deleteSession(String sessionId) {
+    public Mono<Void> deleteSession(String sessionId) {
         if (sessionId == null || sessionId.isEmpty()) {
-            return;
+            return Mono.empty();
         }
 
         String key = SESSION_KEY_PREFIX + sessionId;
-        redisTemplate.delete(key);
-        log.info("Deleted session: {}", sessionId);
+        return reactiveRedisTemplate.delete(key)
+                .doOnSuccess(count -> log.info("Deleted session: {}", sessionId))
+                .then();
     }
 
     /**
      * Validate session exists and is not expired
      *
      * @param sessionId Session ID
-     * @return true if session is valid
+     * @return Mono of true if session is valid
      */
-    public boolean isSessionValid(String sessionId) {
-        return getSession(sessionId).isPresent();
+    public Mono<Boolean> isSessionValid(String sessionId) {
+        return getSession(sessionId)
+                .hasElement();
     }
 
     /**
@@ -206,29 +185,31 @@ public class SessionService {
      * @param idToken New ID token (optional)
      * @param refreshToken New refresh token (optional)
      * @param expiresIn Token expiration in seconds
+     * @return Mono of Void
      */
-    public void updateTokens(String sessionId, String accessToken, String idToken, String refreshToken, long expiresIn) {
-        Optional<UserSession> sessionOpt = getSession(sessionId);
-        if (sessionOpt.isPresent()) {
-            UserSession session = sessionOpt.get();
-            session.setAccessToken(accessToken);
+    public Mono<Void> updateTokens(String sessionId, String accessToken, String idToken, String refreshToken, long expiresIn) {
+        return getSession(sessionId)
+                .flatMap(session -> {
+                    session.setAccessToken(accessToken);
 
-            if (idToken != null) {
-                session.setIdToken(idToken);
-            }
+                    if (idToken != null) {
+                        session.setIdToken(idToken);
+                    }
 
-            if (refreshToken != null) {
-                session.setRefreshToken(refreshToken);
-            }
+                    if (refreshToken != null) {
+                        session.setRefreshToken(refreshToken);
+                    }
 
-            long expiresAt = System.currentTimeMillis() + (expiresIn * 1000);
-            session.setAccessTokenExpiresAt(expiresAt);
+                    long expiresAt = System.currentTimeMillis() + (expiresIn * 1000);
+                    session.setAccessTokenExpiresAt(expiresAt);
 
-            updateSession(sessionId, session);
-            log.info("Updated tokens for session: {}", sessionId);
-        } else {
-            log.warn("Cannot update tokens - session not found: {}", sessionId);
-        }
+                    return updateSession(sessionId, session)
+                            .doOnSuccess(v -> log.info("Updated tokens for session: {}", sessionId));
+                })
+                .switchIfEmpty(Mono.defer(() -> {
+                    log.warn("Cannot update tokens - session not found: {}", sessionId);
+                    return Mono.empty();
+                }));
     }
 
     /**
@@ -236,16 +217,18 @@ public class SessionService {
      *
      * @param sessionId Session ID
      * @param accessDecision Access decision from AccessDecisionService
+     * @return Mono of Void
      */
-    public void updateAccessDecision(String sessionId, AccessDecision accessDecision) {
-        Optional<UserSession> sessionOpt = getSession(sessionId);
-        if (sessionOpt.isPresent()) {
-            UserSession session = sessionOpt.get();
-            session.setAccessDecision(accessDecision);
-            updateSession(sessionId, session);
-            log.info("Updated access decision for session: {}", sessionId);
-        } else {
-            log.warn("Cannot update access decision - session not found: {}", sessionId);
-        }
+    public Mono<Void> updateAccessDecision(String sessionId, AccessDecision accessDecision) {
+        return getSession(sessionId)
+                .flatMap(session -> {
+                    session.setAccessDecision(accessDecision);
+                    return updateSession(sessionId, session)
+                            .doOnSuccess(v -> log.info("Updated access decision for session: {}", sessionId));
+                })
+                .switchIfEmpty(Mono.defer(() -> {
+                    log.warn("Cannot update access decision - session not found: {}", sessionId);
+                    return Mono.empty();
+                }));
     }
 }

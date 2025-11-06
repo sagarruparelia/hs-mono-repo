@@ -3,25 +3,27 @@ package com.example.demo.config;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.data.redis.connection.RedisConnectionFactory;
+import org.springframework.context.annotation.Primary;
+import org.springframework.data.redis.connection.ReactiveRedisConnectionFactory;
 import org.springframework.data.redis.connection.RedisStandaloneConfiguration;
 import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
-import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.ReactiveRedisTemplate;
 import org.springframework.data.redis.serializer.GenericJackson2JsonRedisSerializer;
+import org.springframework.data.redis.serializer.RedisSerializationContext;
 import org.springframework.data.redis.serializer.StringRedisSerializer;
-import org.springframework.session.data.redis.config.annotation.web.http.EnableRedisHttpSession;
+import org.springframework.session.data.redis.config.annotation.web.server.EnableRedisWebSession;
 
 /**
- * Redis Configuration for Session Management
+ * Reactive Redis Configuration for Session Management
  *
  * Configures Redis connection and session storage with:
- * - Server-side session storage in Redis
+ * - Server-side session storage in Redis (reactive)
  * - Distributed session support across multiple BFF instances
  * - Configurable session timeout
  * - JSON serialization for session data
  */
 @Configuration
-@EnableRedisHttpSession(maxInactiveIntervalInSeconds = 1800) // 30 minutes default
+@EnableRedisWebSession(maxInactiveIntervalInSeconds = 1800) // 30 minutes default
 public class RedisConfig {
 
     @Value("${spring.data.redis.host:localhost}")
@@ -37,10 +39,11 @@ public class RedisConfig {
     private int sessionTimeoutMinutes;
 
     /**
-     * Redis connection factory configuration
+     * Reactive Redis connection factory configuration
      */
     @Bean
-    public RedisConnectionFactory redisConnectionFactory() {
+    @Primary
+    public ReactiveRedisConnectionFactory reactiveRedisConnectionFactory() {
         RedisStandaloneConfiguration redisConfig = new RedisStandaloneConfiguration();
         redisConfig.setHostName(redisHost);
         redisConfig.setPort(redisPort);
@@ -50,28 +53,33 @@ public class RedisConfig {
         }
 
         LettuceConnectionFactory factory = new LettuceConnectionFactory(redisConfig);
+        factory.afterPropertiesSet();
         return factory;
     }
 
     /**
-     * RedisTemplate with JSON serialization
-     * Used for storing custom session data
+     * ReactiveRedisTemplate with JSON serialization
+     * Used for storing custom session and cache data
      */
     @Bean
-    public RedisTemplate<String, Object> redisTemplate(RedisConnectionFactory connectionFactory) {
-        RedisTemplate<String, Object> template = new RedisTemplate<>();
-        template.setConnectionFactory(connectionFactory);
+    public ReactiveRedisTemplate<String, Object> reactiveRedisTemplate(
+            ReactiveRedisConnectionFactory connectionFactory) {
 
         // Use String serializer for keys
-        template.setKeySerializer(new StringRedisSerializer());
-        template.setHashKeySerializer(new StringRedisSerializer());
+        StringRedisSerializer keySerializer = new StringRedisSerializer();
 
         // Use JSON serializer for values
-        GenericJackson2JsonRedisSerializer jsonSerializer = new GenericJackson2JsonRedisSerializer();
-        template.setValueSerializer(jsonSerializer);
-        template.setHashValueSerializer(jsonSerializer);
+        GenericJackson2JsonRedisSerializer valueSerializer = new GenericJackson2JsonRedisSerializer();
 
-        template.afterPropertiesSet();
-        return template;
+        // Build serialization context
+        RedisSerializationContext<String, Object> serializationContext = RedisSerializationContext
+                .<String, Object>newSerializationContext(keySerializer)
+                .key(keySerializer)
+                .value(valueSerializer)
+                .hashKey(keySerializer)
+                .hashValue(valueSerializer)
+                .build();
+
+        return new ReactiveRedisTemplate<>(connectionFactory, serializationContext);
     }
 }

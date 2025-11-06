@@ -1,26 +1,26 @@
 package com.example.demo.repository;
 
 import com.example.demo.model.UserDocument;
-import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
-import org.springframework.data.mongodb.repository.MongoRepository;
 import org.springframework.data.mongodb.repository.Query;
+import org.springframework.data.mongodb.repository.ReactiveMongoRepository;
 import org.springframework.stereotype.Repository;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 import java.time.Instant;
 import java.util.List;
-import java.util.Optional;
 
 /**
- * Repository for Document entities in MongoDB
+ * Reactive Repository for Document entities in MongoDB
  */
 @Repository
-public interface DocumentRepository extends MongoRepository<UserDocument, String> {
+public interface DocumentRepository extends ReactiveMongoRepository<UserDocument, String> {
 
     /**
      * Find all documents by owner
      */
-    Page<UserDocument> findByOwnerIdTypeAndOwnerIdValueAndStatus(
+    Flux<UserDocument> findByOwnerIdTypeAndOwnerIdValueAndStatus(
             String ownerIdType,
             String ownerIdValue,
             UserDocument.DocumentStatus status,
@@ -30,7 +30,7 @@ public interface DocumentRepository extends MongoRepository<UserDocument, String
     /**
      * Find all documents uploaded by a user
      */
-    Page<UserDocument> findByUploadedByIdTypeAndUploadedByIdValueAndStatus(
+    Flux<UserDocument> findByUploadedByIdTypeAndUploadedByIdValueAndStatus(
             String uploadedByIdType,
             String uploadedByIdValue,
             UserDocument.DocumentStatus status,
@@ -40,7 +40,7 @@ public interface DocumentRepository extends MongoRepository<UserDocument, String
     /**
      * Find documents by owner and category
      */
-    Page<UserDocument> findByOwnerIdTypeAndOwnerIdValueAndCategoryAndStatus(
+    Flux<UserDocument> findByOwnerIdTypeAndOwnerIdValueAndCategoryAndStatus(
             String ownerIdType,
             String ownerIdValue,
             UserDocument.DocumentCategory category,
@@ -51,7 +51,7 @@ public interface DocumentRepository extends MongoRepository<UserDocument, String
     /**
      * Find temporary documents by session (for cleanup)
      */
-    List<UserDocument> findByStatusAndSessionId(
+    Flux<UserDocument> findByStatusAndSessionId(
             UserDocument.DocumentStatus status,
             String sessionId
     );
@@ -59,7 +59,7 @@ public interface DocumentRepository extends MongoRepository<UserDocument, String
     /**
      * Find temporary documents older than a certain time (for cleanup)
      */
-    List<UserDocument> findByStatusAndUploadedAtBefore(
+    Flux<UserDocument> findByStatusAndUploadedAtBefore(
             UserDocument.DocumentStatus status,
             Instant uploadedBefore
     );
@@ -78,7 +78,7 @@ public interface DocumentRepository extends MongoRepository<UserDocument, String
             "  {'extractedText': {$regex: ?3, $options: 'i'}}" +
             "]" +
             "}")
-    Page<UserDocument> searchDocuments(
+    Flux<UserDocument> searchDocuments(
             String ownerIdType,
             String ownerIdValue,
             UserDocument.DocumentStatus status,
@@ -89,7 +89,7 @@ public interface DocumentRepository extends MongoRepository<UserDocument, String
     /**
      * Find documents by tags
      */
-    Page<UserDocument> findByOwnerIdTypeAndOwnerIdValueAndTagsInAndStatus(
+    Flux<UserDocument> findByOwnerIdTypeAndOwnerIdValueAndTagsInAndStatus(
             String ownerIdType,
             String ownerIdValue,
             List<String> tags,
@@ -100,7 +100,7 @@ public interface DocumentRepository extends MongoRepository<UserDocument, String
     /**
      * Count documents by owner
      */
-    long countByOwnerIdTypeAndOwnerIdValueAndStatus(
+    Mono<Long> countByOwnerIdTypeAndOwnerIdValueAndStatus(
             String ownerIdType,
             String ownerIdValue,
             UserDocument.DocumentStatus status
@@ -109,10 +109,10 @@ public interface DocumentRepository extends MongoRepository<UserDocument, String
     /**
      * Find document by temporary S3 key (for AV callback)
      */
-    Optional<UserDocument> findByTempS3Key(String tempS3Key);
+    Mono<UserDocument> findByTempS3Key(String tempS3Key);
 
     /**
      * Find documents pending AV scan
      */
-    List<UserDocument> findByAvStatus(UserDocument.AntivirusStatus avStatus);
+    Flux<UserDocument> findByAvStatus(UserDocument.AntivirusStatus avStatus);
 }

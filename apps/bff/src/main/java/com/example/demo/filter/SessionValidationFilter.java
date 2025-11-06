@@ -1,38 +1,34 @@
 package com.example.demo.filter;
 
-import com.example.demo.model.UserSession;
-import com.example.demo.service.OAuth2Service;
 import com.example.demo.service.SessionService;
-import jakarta.servlet.FilterChain;
-import jakarta.servlet.ServletException;
-import jakarta.servlet.http.Cookie;
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpCookie;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
-import org.springframework.web.filter.OncePerRequestFilter;
+import org.springframework.web.server.ServerWebExchange;
+import org.springframework.web.server.WebFilter;
+import org.springframework.web.server.WebFilterChain;
+import reactor.core.publisher.Mono;
 
-import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Optional;
 
 /**
- * Session Validation Filter
+ * Reactive Session Validation Filter
  *
  * Validates session on every request to protected endpoints:
  * - Extracts session ID from HTTP-only cookie
  * - Validates session exists in Redis
  * - Checks session expiration
- * - Automatically refreshes tokens if needed
  * - Extends session TTL on activity
  *
  * Skips validation for public endpoints.
  */
 @Slf4j
 @Component
-public class SessionValidationFilter extends OncePerRequestFilter {
+public class SessionValidationFilter implements WebFilter {
 
     private static final String SESSION_COOKIE_NAME = "SESSION_ID";
 
@@ -40,79 +36,62 @@ public class SessionValidationFilter extends OncePerRequestFilter {
     private static final List<String> PUBLIC_PATHS = Arrays.asList(
             "/api/auth/token",
             "/api/health",
-            "/actuator/health"
+            "/actuator/health",
+            "/actuator/prometheus",
+            "/api/documents/av-callback"
     );
 
     private final SessionService sessionService;
-    private final OAuth2Service oauth2Service;
     private final int sessionRefreshThreshold;
 
     public SessionValidationFilter(
             SessionService sessionService,
-            OAuth2Service oauth2Service,
             @Value("${session.refresh.threshold.seconds:300}") int sessionRefreshThreshold
     ) {
         this.sessionService = sessionService;
-        this.oauth2Service = oauth2Service;
         this.sessionRefreshThreshold = sessionRefreshThreshold;
     }
 
     @Override
-    protected void doFilterInternal(
-            HttpServletRequest request,
-            HttpServletResponse response,
-            FilterChain filterChain
-    ) throws ServletException, IOException {
-
-        String requestPath = request.getRequestURI();
+    public Mono<Void> filter(ServerWebExchange exchange, WebFilterChain chain) {
+        String requestPath = exchange.getRequest().getPath().value();
 
         // Skip validation for public endpoints
         if (isPublicPath(requestPath)) {
-            filterChain.doFilter(request, response);
-            return;
+            return chain.filter(exchange);
         }
 
         // Extract session ID from cookie
-        String sessionId = getSessionIdFromCookie(request);
+        String sessionId = getSessionIdFromCookie(exchange);
 
         if (sessionId == null) {
             log.debug("No session cookie found for path: {}", requestPath);
-            sendUnauthorized(response, "No session found");
-            return;
+            return sendUnauthorized(exchange, "No session found");
         }
 
         // Validate session
-        Optional<UserSession> sessionOpt = sessionService.getSession(sessionId);
+        return sessionService.getSession(sessionId)
+                .flatMap(session -> {
+                    // Check if token needs refresh (automatic token refresh)
+                    if (session.shouldRefreshToken(sessionRefreshThreshold)) {
+                        log.info("Token close to expiration for session: {} (will be refreshed by client)", sessionId);
+                        // Note: In reactive pattern, we don't block here for refresh
+                        // The client should handle token refresh via /api/auth/refresh endpoint
+                    }
 
-        if (sessionOpt.isEmpty()) {
-            log.warn("Invalid or expired session: {}", sessionId);
-            sendUnauthorized(response, "Session expired");
-            return;
-        }
-
-        UserSession session = sessionOpt.get();
-
-        // Check if token needs refresh (automatic token refresh)
-        if (session.shouldRefreshToken(sessionRefreshThreshold)) {
-            try {
-                log.info("Auto-refreshing tokens for session: {}", sessionId);
-                refreshTokens(session);
-            } catch (Exception e) {
-                log.error("Failed to auto-refresh tokens for session: {}", sessionId, e);
-                // Don't fail the request - continue with existing token
-                // Token might still be valid, just close to expiration
-            }
-        }
-
-        // Session is valid - extend session TTL
-        sessionService.extendSession(sessionId);
-
-        // Set user context in request attribute for controllers
-        request.setAttribute("userSession", session);
-        request.setAttribute("userId", session.getUserInfo().getId());
-
-        // Continue with request
-        filterChain.doFilter(request, response);
+                    // Session is valid - extend session TTL
+                    return sessionService.extendSession(sessionId)
+                            .doOnSuccess(v -> log.debug("Extended session TTL: {}", sessionId))
+                            .onErrorResume(e -> {
+                                log.warn("Failed to extend session TTL (continuing): {}", e.getMessage());
+                                return Mono.empty();
+                            })
+                            .then(chain.filter(exchange));
+                })
+                .switchIfEmpty(Mono.defer(() -> {
+                    log.warn("Invalid or expired session: {}", sessionId);
+                    return sendUnauthorized(exchange, "Session expired");
+                }));
     }
 
     /**
@@ -125,44 +104,23 @@ public class SessionValidationFilter extends OncePerRequestFilter {
     /**
      * Extract session ID from cookie
      */
-    private String getSessionIdFromCookie(HttpServletRequest request) {
-        Cookie[] cookies = request.getCookies();
-        if (cookies != null) {
-            for (Cookie cookie : cookies) {
-                if (SESSION_COOKIE_NAME.equals(cookie.getName())) {
-                    return cookie.getValue();
-                }
-            }
-        }
-        return null;
-    }
-
-    /**
-     * Refresh tokens with IDP
-     */
-    private void refreshTokens(UserSession session) {
-        OAuth2Service.TokenResponse tokenResponse = oauth2Service.refreshAccessToken(
-                session.getRefreshToken()
-        );
-
-        long expiresIn = tokenResponse.expires_in != null ? tokenResponse.expires_in : 3600;
-        sessionService.updateTokens(
-                session.getSessionId(),
-                tokenResponse.access_token,
-                tokenResponse.id_token,
-                tokenResponse.refresh_token,
-                expiresIn
-        );
+    private String getSessionIdFromCookie(ServerWebExchange exchange) {
+        HttpCookie cookie = exchange.getRequest().getCookies().getFirst(SESSION_COOKIE_NAME);
+        return cookie != null ? cookie.getValue() : null;
     }
 
     /**
      * Send 401 Unauthorized response
      */
-    private void sendUnauthorized(HttpServletResponse response, String message) throws IOException {
-        response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-        response.setContentType("application/json");
-        response.getWriter().write(
-                String.format("{\"error\": \"Unauthorized\", \"message\": \"%s\"}", message)
+    private Mono<Void> sendUnauthorized(ServerWebExchange exchange, String message) {
+        exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
+        exchange.getResponse().getHeaders().add("Content-Type", "application/json");
+
+        String responseBody = String.format("{\"error\": \"Unauthorized\", \"message\": \"%s\"}", message);
+        byte[] bytes = responseBody.getBytes(StandardCharsets.UTF_8);
+
+        return exchange.getResponse().writeWith(
+                Mono.just(exchange.getResponse().bufferFactory().wrap(bytes))
         );
     }
 }

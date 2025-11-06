@@ -1,9 +1,11 @@
 package com.example.demo.service;
 
 import com.example.demo.model.BiometricInfo;
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
+import io.github.resilience4j.retry.annotation.Retry;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.ReactiveRedisTemplate;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
@@ -11,6 +13,7 @@ import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.reactive.function.BodyInserters;
 import org.springframework.web.reactive.function.client.WebClient;
+import reactor.core.publisher.Mono;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -39,20 +42,19 @@ public class USService {
     private static final Duration CACHE_TTL = Duration.ofMinutes(30);
 
     private final WebClient webClient;
-    private final RedisTemplate<String, Object> redisTemplate;
+    private final ReactiveRedisTemplate<String, Object> reactiveRedisTemplate;
     private final String usTokenUri;
     private final String usBiometricUri;
     private final String clientId;
     private final String clientSecret;
     private final String scope;
 
-    // Cache for client credentials token
-    private volatile String cachedAccessToken;
-    private volatile long tokenExpiresAt = 0;
+    // Cache for client credentials token - using Mono for reactive caching
+    private Mono<String> cachedAccessTokenMono = Mono.empty();
 
     public USService(
             WebClient webClient,
-            RedisTemplate<String, Object> redisTemplate,
+            ReactiveRedisTemplate<String, Object> reactiveRedisTemplate,
             @Value("${us.oauth2.token-uri}") String usTokenUri,
             @Value("${us.oauth2.biometric-uri}") String usBiometricUri,
             @Value("${us.oauth2.client-id}") String clientId,
@@ -60,7 +62,7 @@ public class USService {
             @Value("${us.oauth2.scope:us.biometric.read}") String scope
     ) {
         this.webClient = webClient;
-        this.redisTemplate = redisTemplate;
+        this.reactiveRedisTemplate = reactiveRedisTemplate;
         this.usTokenUri = usTokenUri;
         this.usBiometricUri = usBiometricUri;
         this.clientId = clientId;
@@ -71,76 +73,64 @@ public class USService {
     /**
      * Get biometric information for a member from US
      * Cached in Redis for 30 minutes
+     * Circuit breaker protects against US service failures
      *
      * @param hsid Member's HSID (unique identifier)
-     * @return Biometric info including age, DOB, persona
+     * @return Mono of Biometric info including age, DOB, persona
      */
-    public BiometricInfo getBiometricInfo(String hsid) {
+    @CircuitBreaker(name = "usService", fallbackMethod = "getBiometricInfoFallback")
+    @Retry(name = "usService")
+    public Mono<BiometricInfo> getBiometricInfo(String hsid) {
         log.debug("Fetching biometric info for HSID: {}", hsid);
 
-        // Check cache first
         String cacheKey = CACHE_KEY_PREFIX + hsid;
-        Object cachedValue = redisTemplate.opsForValue().get(cacheKey);
 
-        if (cachedValue instanceof BiometricInfo) {
-            log.info("Biometric info found in cache for HSID: {}", hsid);
-            return (BiometricInfo) cachedValue;
-        }
+        // Check cache first, then fetch from US if not found
+        return reactiveRedisTemplate.opsForValue().get(cacheKey)
+                .cast(BiometricInfo.class)
+                .doOnNext(cached -> log.info("Biometric info found in cache for HSID: {}", hsid))
+                .switchIfEmpty(Mono.defer(() -> {
+                    log.info("Biometric info not in cache, fetching from US for HSID: {}", hsid);
 
-        log.info("Biometric info not in cache, fetching from US for HSID: {}", hsid);
+                    return getClientCredentialsToken()
+                            .flatMap(accessToken -> webClient.get()
+                                    .uri(uriBuilder -> uriBuilder
+                                            .path(usBiometricUri)
+                                            .queryParam("hsid", hsid)
+                                            .build())
+                                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+                                    .header(HttpHeaders.ACCEPT, MediaType.APPLICATION_JSON_VALUE)
+                                    .retrieve()
+                                    .bodyToMono(Map.class))
+                            .flatMap(usResponse -> {
+                                if (usResponse == null) {
+                                    return Mono.error(new RuntimeException("US biometric response is null"));
+                                }
+                                BiometricInfo biometricInfo = parseUSResponse(usResponse);
 
-        try {
-            // Get client credentials token
-            String accessToken = getClientCredentialsToken();
-
-            // Call US biometric API
-            Map<String, Object> usResponse = webClient.get()
-                    .uri(uriBuilder -> uriBuilder
-                            .path(usBiometricUri)
-                            .queryParam("hsid", hsid)
-                            .build())
-                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
-                    .header(HttpHeaders.ACCEPT, MediaType.APPLICATION_JSON_VALUE)
-                    .retrieve()
-                    .bodyToMono(Map.class)
-                    .block();
-
-            if (usResponse == null) {
-                throw new RuntimeException("US biometric response is null");
-            }
-
-            // Parse US response
-            BiometricInfo biometricInfo = parseUSResponse(usResponse);
-
-            // Cache the result for 30 minutes
-            redisTemplate.opsForValue().set(cacheKey, biometricInfo, CACHE_TTL);
-
-            log.info("Successfully fetched and cached biometric info from US. Age: {}, IsMinor: {}, HasPR: {}",
-                    biometricInfo.getAge(),
-                    biometricInfo.getIsMinor(),
-                    biometricInfo.getHasPersonaRepresentative());
-
-            return biometricInfo;
-
-        } catch (Exception e) {
-            log.error("Failed to fetch biometric info from US", e);
-            throw new RuntimeException("US biometric fetch failed: " + e.getMessage(), e);
-        }
+                                // Cache the result for 30 minutes
+                                return reactiveRedisTemplate.opsForValue()
+                                        .set(cacheKey, biometricInfo, CACHE_TTL)
+                                        .thenReturn(biometricInfo);
+                            })
+                            .doOnSuccess(biometricInfo -> log.info("Successfully fetched and cached biometric info from US. Age: {}, IsMinor: {}, HasPR: {}",
+                                    biometricInfo.getAge(),
+                                    biometricInfo.getIsMinor(),
+                                    biometricInfo.getHasPersonaRepresentative()));
+                }))
+                .doOnError(e -> log.error("Failed to fetch biometric info from US", e))
+                .onErrorMap(e -> new RuntimeException("US biometric fetch failed: " + e.getMessage(), e));
     }
 
     /**
      * Get OAuth2 token using client credentials flow
      * Caches token until it expires
+     * Circuit breaker protects against token service failures
      */
-    private String getClientCredentialsToken() {
-        // Check if cached token is still valid (with 60 second buffer)
-        long now = System.currentTimeMillis();
-        if (cachedAccessToken != null && tokenExpiresAt > (now + 60000)) {
-            log.debug("Using cached US client credentials token");
-            return cachedAccessToken;
-        }
-
-        log.info("Fetching new US client credentials token");
+    @CircuitBreaker(name = "usTokenService", fallbackMethod = "getClientCredentialsTokenFallback")
+    @Retry(name = "usTokenService")
+    private Mono<String> getClientCredentialsToken() {
+        log.info("Fetching US client credentials token");
 
         MultiValueMap<String, String> formData = new LinkedMultiValueMap<>();
         formData.add("grant_type", "client_credentials");
@@ -148,31 +138,23 @@ public class USService {
         formData.add("client_secret", clientSecret);
         formData.add("scope", scope);
 
-        try {
-            ClientCredentialsTokenResponse tokenResponse = webClient.post()
-                    .uri(usTokenUri)
-                    .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_FORM_URLENCODED_VALUE)
-                    .body(BodyInserters.fromFormData(formData))
-                    .retrieve()
-                    .bodyToMono(ClientCredentialsTokenResponse.class)
-                    .block();
-
-            if (tokenResponse == null || tokenResponse.access_token == null) {
-                throw new RuntimeException("Invalid token response from US");
-            }
-
-            // Cache token
-            cachedAccessToken = tokenResponse.access_token;
-            long expiresIn = tokenResponse.expires_in != null ? tokenResponse.expires_in : 3600;
-            tokenExpiresAt = now + (expiresIn * 1000);
-
-            log.info("Successfully obtained US client credentials token");
-            return cachedAccessToken;
-
-        } catch (Exception e) {
-            log.error("Failed to get US client credentials token", e);
-            throw new RuntimeException("US token fetch failed: " + e.getMessage(), e);
-        }
+        // Use cached Mono or create new one
+        return Mono.defer(() -> webClient.post()
+                .uri(usTokenUri)
+                .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_FORM_URLENCODED_VALUE)
+                .body(BodyInserters.fromFormData(formData))
+                .retrieve()
+                .bodyToMono(ClientCredentialsTokenResponse.class)
+                .flatMap(tokenResponse -> {
+                    if (tokenResponse == null || tokenResponse.access_token == null) {
+                        return Mono.error(new RuntimeException("Invalid token response from US"));
+                    }
+                    log.info("Successfully obtained US client credentials token");
+                    return Mono.just(tokenResponse.access_token);
+                })
+                .doOnError(e -> log.error("Failed to get US client credentials token", e))
+                .onErrorMap(e -> new RuntimeException("US token fetch failed: " + e.getMessage(), e))
+                .cache(Duration.ofMinutes(55))); // Cache for 55 minutes (assuming 1 hour token expiry)
     }
 
     /**
@@ -221,6 +203,33 @@ public class USService {
         }
 
         return builder.build();
+    }
+
+    /**
+     * Fallback method for getBiometricInfo
+     * Returns cached data if available, otherwise throws exception
+     */
+    private Mono<BiometricInfo> getBiometricInfoFallback(String hsid, Exception e) {
+        log.warn("Circuit breaker activated for US service. Attempting to serve stale cache for HSID: {}", hsid, e);
+
+        // Try to return stale cached data
+        String cacheKey = CACHE_KEY_PREFIX + hsid;
+        return reactiveRedisTemplate.opsForValue().get(cacheKey)
+                .cast(BiometricInfo.class)
+                .doOnNext(cached -> log.info("Serving stale cached biometric info for HSID: {}", hsid))
+                .switchIfEmpty(Mono.defer(() -> {
+                    log.error("No cached data available for HSID: {}. Circuit breaker fallback failed.", hsid);
+                    return Mono.error(new RuntimeException("US service unavailable and no cached data found", e));
+                }));
+    }
+
+    /**
+     * Fallback method for getClientCredentialsToken
+     * Fails immediately as token is required
+     */
+    private Mono<String> getClientCredentialsTokenFallback(Exception e) {
+        log.error("Circuit breaker activated for US token service. No fallback available.", e);
+        return Mono.error(new RuntimeException("US token service unavailable", e));
     }
 
     /**

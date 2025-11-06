@@ -2,9 +2,11 @@ package com.example.demo.service;
 
 import com.example.demo.model.AccessLevelResponse;
 import com.example.demo.model.SupportedMember;
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
+import io.github.resilience4j.retry.annotation.Retry;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.ReactiveRedisTemplate;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
@@ -12,6 +14,7 @@ import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.reactive.function.BodyInserters;
 import org.springframework.web.reactive.function.client.WebClient;
+import reactor.core.publisher.Mono;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -39,20 +42,19 @@ public class PSNService {
     private static final Duration CACHE_TTL = Duration.ofMinutes(30);
 
     private final WebClient webClient;
-    private final RedisTemplate<String, Object> redisTemplate;
+    private final ReactiveRedisTemplate<String, Object> reactiveRedisTemplate;
     private final String psnTokenUri;
     private final String psnAccessLevelUri;
     private final String clientId;
     private final String clientSecret;
     private final String scope;
 
-    // Cache for client credentials token
-    private volatile String cachedAccessToken;
-    private volatile long tokenExpiresAt = 0;
+    // Cache for client credentials token - using Mono for reactive caching
+    private Mono<String> cachedAccessTokenMono = Mono.empty();
 
     public PSNService(
             WebClient webClient,
-            RedisTemplate<String, Object> redisTemplate,
+            ReactiveRedisTemplate<String, Object> reactiveRedisTemplate,
             @Value("${psn.oauth2.token-uri}") String psnTokenUri,
             @Value("${psn.oauth2.access-level-uri}") String psnAccessLevelUri,
             @Value("${psn.oauth2.client-id}") String clientId,
@@ -60,7 +62,7 @@ public class PSNService {
             @Value("${psn.oauth2.scope:psn.access_level.read}") String scope
     ) {
         this.webClient = webClient;
-        this.redisTemplate = redisTemplate;
+        this.reactiveRedisTemplate = reactiveRedisTemplate;
         this.psnTokenUri = psnTokenUri;
         this.psnAccessLevelUri = psnAccessLevelUri;
         this.clientId = clientId;
@@ -71,76 +73,64 @@ public class PSNService {
     /**
      * Get access level information for a member from PSN
      * Cached in Redis for 30 minutes
+     * Circuit breaker protects against PSN service failures
      *
      * @param memberIdType Type of member ID (HSID, OHID, MSID, EID)
      * @param memberIdValue The member's ID value
-     * @return Access level response with supported members
+     * @return Mono of Access level response with supported members
      */
-    public AccessLevelResponse getAccessLevel(String memberIdType, String memberIdValue) {
+    @CircuitBreaker(name = "psnService", fallbackMethod = "getAccessLevelFallback")
+    @Retry(name = "psnService")
+    public Mono<AccessLevelResponse> getAccessLevel(String memberIdType, String memberIdValue) {
         log.debug("Fetching access level for member: {}={}", memberIdType, memberIdValue);
 
-        // Check cache first
         String cacheKey = CACHE_KEY_PREFIX + memberIdType + ":" + memberIdValue;
-        Object cachedValue = redisTemplate.opsForValue().get(cacheKey);
 
-        if (cachedValue instanceof AccessLevelResponse) {
-            log.info("Access level found in cache for member: {}={}", memberIdType, memberIdValue);
-            return (AccessLevelResponse) cachedValue;
-        }
+        // Check cache first, then fetch from PSN if not found
+        return reactiveRedisTemplate.opsForValue().get(cacheKey)
+                .cast(AccessLevelResponse.class)
+                .doOnNext(cached -> log.info("Access level found in cache for member: {}={}", memberIdType, memberIdValue))
+                .switchIfEmpty(Mono.defer(() -> {
+                    log.info("Access level not in cache, fetching from PSN for member: {}={}", memberIdType, memberIdValue);
 
-        log.info("Access level not in cache, fetching from PSN for member: {}={}", memberIdType, memberIdValue);
+                    return getClientCredentialsToken()
+                            .flatMap(accessToken -> webClient.get()
+                                    .uri(uriBuilder -> uriBuilder
+                                            .path(psnAccessLevelUri)
+                                            .queryParam("memberIdType", memberIdType)
+                                            .queryParam("memberIdValue", memberIdValue)
+                                            .build())
+                                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+                                    .header(HttpHeaders.ACCEPT, MediaType.APPLICATION_JSON_VALUE)
+                                    .retrieve()
+                                    .bodyToMono(Map.class))
+                            .flatMap(psnResponse -> {
+                                if (psnResponse == null) {
+                                    return Mono.error(new RuntimeException("PSN access level response is null"));
+                                }
+                                AccessLevelResponse response = parsePSNResponse(psnResponse);
 
-        try {
-            // Get client credentials token
-            String accessToken = getClientCredentialsToken();
-
-            // Call PSN access level API
-            Map<String, Object> psnResponse = webClient.get()
-                    .uri(uriBuilder -> uriBuilder
-                            .path(psnAccessLevelUri)
-                            .queryParam("memberIdType", memberIdType)
-                            .queryParam("memberIdValue", memberIdValue)
-                            .build())
-                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
-                    .header(HttpHeaders.ACCEPT, MediaType.APPLICATION_JSON_VALUE)
-                    .retrieve()
-                    .bodyToMono(Map.class)
-                    .block();
-
-            if (psnResponse == null) {
-                throw new RuntimeException("PSN access level response is null");
-            }
-
-            // Parse PSN response
-            AccessLevelResponse response = parsePSNResponse(psnResponse);
-
-            // Cache the result for 30 minutes
-            redisTemplate.opsForValue().set(cacheKey, response, CACHE_TTL);
-
-            log.info("Successfully fetched and cached access level from PSN. Supported members: {}",
-                    response.getSupportedMembers() != null ? response.getSupportedMembers().size() : 0);
-
-            return response;
-
-        } catch (Exception e) {
-            log.error("Failed to fetch access level from PSN", e);
-            throw new RuntimeException("PSN access level fetch failed: " + e.getMessage(), e);
-        }
+                                // Cache the result for 30 minutes
+                                return reactiveRedisTemplate.opsForValue()
+                                        .set(cacheKey, response, CACHE_TTL)
+                                        .thenReturn(response);
+                            })
+                            .doOnSuccess(response -> log.info("Successfully fetched and cached access level from PSN. Supported members: {}",
+                                    response.getSupportedMembers() != null ? response.getSupportedMembers().size() : 0));
+                }))
+                .doOnError(e -> log.error("Failed to fetch access level from PSN", e))
+                .onErrorMap(e -> new RuntimeException("PSN access level fetch failed: " + e.getMessage(), e));
     }
 
     /**
      * Get OAuth2 token using client credentials flow
      * Caches token until it expires
+     * Circuit breaker protects against token service failures
      */
-    private String getClientCredentialsToken() {
-        // Check if cached token is still valid (with 60 second buffer)
-        long now = System.currentTimeMillis();
-        if (cachedAccessToken != null && tokenExpiresAt > (now + 60000)) {
-            log.debug("Using cached PSN client credentials token");
-            return cachedAccessToken;
-        }
-
-        log.info("Fetching new PSN client credentials token");
+    @CircuitBreaker(name = "psnTokenService", fallbackMethod = "getClientCredentialsTokenFallback")
+    @Retry(name = "psnTokenService")
+    private Mono<String> getClientCredentialsToken() {
+        log.info("Fetching PSN client credentials token");
 
         MultiValueMap<String, String> formData = new LinkedMultiValueMap<>();
         formData.add("grant_type", "client_credentials");
@@ -148,31 +138,23 @@ public class PSNService {
         formData.add("client_secret", clientSecret);
         formData.add("scope", scope);
 
-        try {
-            ClientCredentialsTokenResponse tokenResponse = webClient.post()
-                    .uri(psnTokenUri)
-                    .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_FORM_URLENCODED_VALUE)
-                    .body(BodyInserters.fromFormData(formData))
-                    .retrieve()
-                    .bodyToMono(ClientCredentialsTokenResponse.class)
-                    .block();
-
-            if (tokenResponse == null || tokenResponse.access_token == null) {
-                throw new RuntimeException("Invalid token response from PSN");
-            }
-
-            // Cache token
-            cachedAccessToken = tokenResponse.access_token;
-            long expiresIn = tokenResponse.expires_in != null ? tokenResponse.expires_in : 3600;
-            tokenExpiresAt = now + (expiresIn * 1000);
-
-            log.info("Successfully obtained PSN client credentials token");
-            return cachedAccessToken;
-
-        } catch (Exception e) {
-            log.error("Failed to get PSN client credentials token", e);
-            throw new RuntimeException("PSN token fetch failed: " + e.getMessage(), e);
-        }
+        // Use cached Mono or create new one
+        return Mono.defer(() -> webClient.post()
+                .uri(psnTokenUri)
+                .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_FORM_URLENCODED_VALUE)
+                .body(BodyInserters.fromFormData(formData))
+                .retrieve()
+                .bodyToMono(ClientCredentialsTokenResponse.class)
+                .flatMap(tokenResponse -> {
+                    if (tokenResponse == null || tokenResponse.access_token == null) {
+                        return Mono.error(new RuntimeException("Invalid token response from PSN"));
+                    }
+                    log.info("Successfully obtained PSN client credentials token");
+                    return Mono.just(tokenResponse.access_token);
+                })
+                .doOnError(e -> log.error("Failed to get PSN client credentials token", e))
+                .onErrorMap(e -> new RuntimeException("PSN token fetch failed: " + e.getMessage(), e))
+                .cache(Duration.ofMinutes(55))); // Cache for 55 minutes (assuming 1 hour token expiry)
     }
 
     /**
@@ -224,6 +206,34 @@ public class PSNService {
         }
 
         return builder.build();
+    }
+
+    /**
+     * Fallback method for getAccessLevel
+     * Returns cached data if available, otherwise throws exception
+     */
+    private Mono<AccessLevelResponse> getAccessLevelFallback(String memberIdType, String memberIdValue, Exception e) {
+        log.warn("Circuit breaker activated for PSN service. Attempting to serve stale cache for member: {}={}",
+                memberIdType, memberIdValue, e);
+
+        // Try to return stale cached data
+        String cacheKey = CACHE_KEY_PREFIX + memberIdType + ":" + memberIdValue;
+        return reactiveRedisTemplate.opsForValue().get(cacheKey)
+                .cast(AccessLevelResponse.class)
+                .doOnNext(cached -> log.info("Serving stale cached access level for member: {}={}", memberIdType, memberIdValue))
+                .switchIfEmpty(Mono.defer(() -> {
+                    log.error("No cached data available for member: {}={}. Circuit breaker fallback failed.", memberIdType, memberIdValue);
+                    return Mono.error(new RuntimeException("PSN service unavailable and no cached data found", e));
+                }));
+    }
+
+    /**
+     * Fallback method for getClientCredentialsToken
+     * Fails immediately as token is required
+     */
+    private Mono<String> getClientCredentialsTokenFallback(Exception e) {
+        log.error("Circuit breaker activated for PSN token service. No fallback available.", e);
+        return Mono.error(new RuntimeException("PSN token service unavailable", e));
     }
 
     /**

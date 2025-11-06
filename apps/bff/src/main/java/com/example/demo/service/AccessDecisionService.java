@@ -3,6 +3,7 @@ package com.example.demo.service;
 import com.example.demo.model.*;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import reactor.core.publisher.Mono;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -44,63 +45,60 @@ public class AccessDecisionService {
      *
      * @param hsid Member's HSID from IDP claims
      * @param applicationType Type of application (WEB_CL or WEB_HS)
-     * @return Complete access decision with viewable members
+     * @return Mono of complete access decision with viewable members
      */
-    public AccessDecision determineAccess(String hsid, AccessDecision.ApplicationType applicationType) {
+    public Mono<AccessDecision> determineAccess(String hsid, AccessDecision.ApplicationType applicationType) {
         log.info("Determining access for HSID: {} in application: {}", hsid, applicationType);
 
         // Step 1: Call US to get biometric info
-        BiometricInfo biometricInfo;
-        try {
-            biometricInfo = usService.getBiometricInfo(hsid);
-        } catch (Exception e) {
-            log.error("Failed to fetch biometric info from US", e);
-            return createNoAccessDecision("US biometric fetch failed: " + e.getMessage());
-        }
+        return usService.getBiometricInfo(hsid)
+                .flatMap(biometricInfo -> {
+                    // Step 2: Check if member is under 18
+                    if (Boolean.TRUE.equals(biometricInfo.getIsMinor())) {
+                        log.info("Member is under 18. Access: SELF_ONLY_MINOR");
+                        return Mono.just(createSelfOnlyMinorDecision(biometricInfo, applicationType));
+                    }
 
-        // Step 2: Check if member is under 18
-        if (Boolean.TRUE.equals(biometricInfo.getIsMinor())) {
-            log.info("Member is under 18. Access: SELF_ONLY_MINOR");
-            return createSelfOnlyMinorDecision(biometricInfo, applicationType);
-        }
+                    // Step 3: Check if member has PR persona
+                    if (!Boolean.TRUE.equals(biometricInfo.getHasPersonaRepresentative())) {
+                        log.info("Member is 18+ but has no PR persona. Access: SELF_ONLY_ADULT");
+                        return Mono.just(createSelfOnlyAdultDecision(biometricInfo, applicationType));
+                    }
 
-        // Step 3: Check if member has PR persona
-        if (!Boolean.TRUE.equals(biometricInfo.getHasPersonaRepresentative())) {
-            log.info("Member is 18+ but has no PR persona. Access: SELF_ONLY_ADULT");
-            return createSelfOnlyAdultDecision(biometricInfo, applicationType);
-        }
+                    // Step 4: Member is 18+ with PR - call PSN for supported members
+                    log.info("Member is 18+ with PR persona. Checking PSN for supported members.");
 
-        // Step 4: Member is 18+ with PR - call PSN for supported members
-        log.info("Member is 18+ with PR persona. Checking PSN for supported members.");
+                    return psnService.getAccessLevel("HSID", hsid)
+                            .map(accessLevel -> {
+                                // Step 5: Filter supported members by persona (must have RRP + DAA)
+                                List<SupportedMember> eligibleMembers = filterByPersona(accessLevel.getSupportedMembers());
 
-        AccessLevelResponse accessLevel;
-        try {
-            // Use HSID as member ID for PSN call
-            accessLevel = psnService.getAccessLevel("HSID", hsid);
-        } catch (Exception e) {
-            log.error("Failed to fetch access level from PSN", e);
-            // If PSN fails for PR member, default to SELF_ONLY_ADULT
-            return createSelfOnlyAdultDecision(biometricInfo, applicationType, "PSN fetch failed: " + e.getMessage());
-        }
+                                if (eligibleMembers.isEmpty()) {
+                                    log.info("Member has PR but no eligible supported members (RRP+DAA). Access: SELF_ONLY_ADULT");
+                                    return createSelfOnlyAdultDecision(biometricInfo, applicationType, "No supported members with RRP+DAA");
+                                }
 
-        // Step 5: Filter supported members by persona (must have RRP + DAA)
-        List<SupportedMember> eligibleMembers = filterByPersona(accessLevel.getSupportedMembers());
-
-        if (eligibleMembers.isEmpty()) {
-            log.info("Member has PR but no eligible supported members (RRP+DAA). Access: SELF_ONLY_ADULT");
-            return createSelfOnlyAdultDecision(biometricInfo, applicationType, "No supported members with RRP+DAA");
-        }
-
-        // Step 6: Decision based on application type
-        if (applicationType == AccessDecision.ApplicationType.WEB_CL) {
-            // web-cl: Member can support others - CANNOT view own data
-            log.info("web-cl: Member has PR and {} eligible supported members. Access: SUPPORTING_OTHERS", eligibleMembers.size());
-            return createSupportingOthersDecision(biometricInfo, accessLevel, eligibleMembers);
-        } else {
-            // web-hs: Member can view BOTH own data AND supported members
-            log.info("web-hs: Member has PR and {} eligible supported members. Access: SELF_AND_OTHERS", eligibleMembers.size());
-            return createSelfAndOthersDecision(biometricInfo, accessLevel, eligibleMembers);
-        }
+                                // Step 6: Decision based on application type
+                                if (applicationType == AccessDecision.ApplicationType.WEB_CL) {
+                                    // web-cl: Member can support others - CANNOT view own data
+                                    log.info("web-cl: Member has PR and {} eligible supported members. Access: SUPPORTING_OTHERS", eligibleMembers.size());
+                                    return createSupportingOthersDecision(biometricInfo, accessLevel, eligibleMembers);
+                                } else {
+                                    // web-hs: Member can view BOTH own data AND supported members
+                                    log.info("web-hs: Member has PR and {} eligible supported members. Access: SELF_AND_OTHERS", eligibleMembers.size());
+                                    return createSelfAndOthersDecision(biometricInfo, accessLevel, eligibleMembers);
+                                }
+                            })
+                            .onErrorResume(e -> {
+                                log.error("Failed to fetch access level from PSN", e);
+                                // If PSN fails for PR member, default to SELF_ONLY_ADULT
+                                return Mono.just(createSelfOnlyAdultDecision(biometricInfo, applicationType, "PSN fetch failed: " + e.getMessage()));
+                            });
+                })
+                .onErrorResume(e -> {
+                    log.error("Failed to fetch biometric info from US", e);
+                    return Mono.just(createNoAccessDecision("US biometric fetch failed: " + e.getMessage()));
+                });
     }
 
     /**

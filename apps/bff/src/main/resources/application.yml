@@ -123,16 +123,102 @@ logging:
     console: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"
     file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
 
+# Resilience4j Configuration
+resilience4j:
+  circuitbreaker:
+    configs:
+      default:
+        sliding-window-size: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 10s
+        permitted-number-of-calls-in-half-open-state: 3
+        minimum-number-of-calls: 5
+        slow-call-rate-threshold: 100
+        slow-call-duration-threshold: 5s
+        register-health-indicator: true
+        automatic-transition-from-open-to-half-open-enabled: true
+    instances:
+      usService:
+        base-config: default
+        failure-rate-threshold: 60
+      usTokenService:
+        base-config: default
+        failure-rate-threshold: 60
+      psnService:
+        base-config: default
+        failure-rate-threshold: 60
+      psnTokenService:
+        base-config: default
+        failure-rate-threshold: 60
+      oauth2Service:
+        base-config: default
+        failure-rate-threshold: 70
+        wait-duration-in-open-state: 30s
+  retry:
+    configs:
+      default:
+        max-attempts: 3
+        wait-duration: 500ms
+        exponential-backoff-multiplier: 2
+        retry-exceptions:
+          - org.springframework.web.reactive.function.client.WebClientRequestException
+          - java.util.concurrent.TimeoutException
+    instances:
+      usService:
+        base-config: default
+      usTokenService:
+        base-config: default
+      psnService:
+        base-config: default
+      psnTokenService:
+        base-config: default
+      oauth2Service:
+        base-config: default
+        max-attempts: 2
+  timelimiter:
+    configs:
+      default:
+        timeout-duration: 10s
+    instances:
+      usService:
+        timeout-duration: 10s
+      psnService:
+        timeout-duration: 10s
+      oauth2Service:
+        timeout-duration: 15s
+
 # Actuator Configuration
 management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics
+        # Expose health, info, metrics, and Prometheus endpoint
+        include: health,info,metrics,prometheus,circuitbreakers,circuitbreakerevents
       base-path: /actuator
   endpoint:
     health:
       show-details: when-authorized
+      show-components: when-authorized
+      probes:
+        enabled: true
+  health:
+    circuitbreakers:
+      enabled: true
+    redis:
+      enabled: true
+    mongo:
+      enabled: true
+  # Prometheus metrics configuration
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+    tags:
+      application: ${spring.application.name}
+      environment: ${SPRING_PROFILES_ACTIVE:development}
 
 # Active Profile
 ---
@@ -167,6 +253,10 @@ spring:
           secure: true
           domain: .staging.example.com
 
+# Staging CORS
+cors:
+  allowed-origins: ${CORS_ALLOWED_ORIGINS:https://staging.example.com,https://app-staging.example.com}
+
 logging:
   level:
     com.example.demo: INFO
@@ -185,6 +275,22 @@ spring:
         cookie:
           secure: true
           domain: .example.com
+
+# Production CORS
+cors:
+  allowed-origins: ${CORS_ALLOWED_ORIGINS:https://example.com,https://app.example.com}
+
+# Production Actuator - Restrict endpoints
+management:
+  endpoints:
+    web:
+      exposure:
+        # Only expose essential endpoints in production
+        include: health,metrics,prometheus
+  endpoint:
+    health:
+      show-details: never
+      show-components: never
 
 logging:
   level:

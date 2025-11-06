@@ -3,32 +3,27 @@ package com.example.demo.config;
 import com.example.demo.filter.SessionValidationFilter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.security.config.annotation.web.builders.HttpSecurity;
-import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
-import org.springframework.security.config.http.SessionCreationPolicy;
-import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
-import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
-import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
+import org.springframework.security.config.annotation.web.reactive.EnableWebFluxSecurity;
+import org.springframework.security.config.web.server.SecurityWebFiltersOrder;
+import org.springframework.security.config.web.server.ServerHttpSecurity;
+import org.springframework.security.web.server.SecurityWebFilterChain;
 import org.springframework.web.cors.CorsConfiguration;
-import org.springframework.web.cors.CorsConfigurationSource;
-import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+import org.springframework.web.cors.reactive.CorsConfigurationSource;
+import org.springframework.web.cors.reactive.UrlBasedCorsConfigurationSource;
 
 import java.util.Arrays;
-import java.util.List;
 
 /**
- * Spring Security Configuration
+ * Spring Security Configuration for WebFlux
  *
  * Configures security for the BFF with:
  * - CORS for cross-origin requests from frontend
- * - CSRF protection with cookies
- * - Session management with Redis
+ * - CSRF protection disabled (using session-based auth with SameSite cookies)
  * - Public and protected endpoints
  * - Session validation filter
  */
 @Configuration
-@EnableWebSecurity
+@EnableWebFluxSecurity
 public class SecurityConfig {
 
     private final SessionValidationFilter sessionValidationFilter;
@@ -38,47 +33,34 @@ public class SecurityConfig {
     }
 
     @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
-        // CSRF Token Handler
-        CsrfTokenRequestAttributeHandler csrfHandler = new CsrfTokenRequestAttributeHandler();
-        csrfHandler.setCsrfRequestAttributeName("_csrf");
-
-        http
+    public SecurityWebFilterChain securityWebFilterChain(ServerHttpSecurity http) {
+        return http
                 // CORS Configuration
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
 
-                // CSRF Protection
-                .csrf(csrf -> csrf
-                        .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
-                        .csrfTokenRequestHandler(csrfHandler)
-                        // Disable CSRF for auth endpoints (PKCE provides protection)
-                        .ignoringRequestMatchers("/api/auth/token", "/api/auth/logout")
-                )
+                // CSRF Protection - Disabled for now
+                // In WebFlux with custom session management, rely on SameSite cookies
+                .csrf(ServerHttpSecurity.CsrfSpec::disable)
 
                 // Authorization Rules
-                .authorizeHttpRequests(authorize -> authorize
+                .authorizeExchange(exchanges -> exchanges
                         // Public endpoints
-                        .requestMatchers(
-                                "/api/auth/token",      // Token exchange (PKCE protected)
-                                "/api/health",           // Health check
-                                "/actuator/health"       // Actuator health
+                        .pathMatchers(
+                                "/api/auth/token",           // Token exchange (PKCE protected)
+                                "/api/health",               // Health check
+                                "/actuator/health",          // Actuator health
+                                "/actuator/prometheus",      // Prometheus metrics
+                                "/api/documents/av-callback" // AV callback from Lambda
                         ).permitAll()
 
                         // All other endpoints require authentication
-                        .anyRequest().authenticated()
-                )
-
-                // Session Management
-                .sessionManagement(session -> session
-                        .sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED)
-                        .maximumSessions(1) // Single session per user
-                        .maxSessionsPreventsLogin(false) // New login invalidates old session
+                        .anyExchange().authenticated()
                 )
 
                 // Add session validation filter
-                .addFilterBefore(sessionValidationFilter, UsernamePasswordAuthenticationFilter.class);
+                .addFilterBefore(sessionValidationFilter, SecurityWebFiltersOrder.AUTHENTICATION)
 
-        return http.build();
+                .build();
     }
 
     /**

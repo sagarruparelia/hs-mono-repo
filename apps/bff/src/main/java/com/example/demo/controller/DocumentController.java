@@ -8,14 +8,15 @@ import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.springframework.web.bind.annotation.*;
+import reactor.core.publisher.Mono;
 
-import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 import java.util.Map;
 
 /**
- * REST API for document management
+ * REST API for document management (Reactive)
  */
 @Slf4j
 @RestController
@@ -33,162 +34,93 @@ public class DocumentController {
     /**
      * Initiate document upload
      * Returns presigned URLs for direct S3 upload
-     *
-     * POST /api/documents/upload/initiate
-     * Body: {
-     *   "files": [
-     *     { "fileName": "lab-results.pdf", "contentType": "application/pdf", "fileSize": 1024000 }
-     *   ],
-     *   "ownerIdType": "EID",
-     *   "ownerIdValue": "E123456"
-     * }
-     *
-     * Response: {
-     *   "uploads": [
-     *     {
-     *       "tempDocumentId": "uuid",
-     *       "fileName": "lab-results.pdf",
-     *       "presignedUrl": "https://s3.amazonaws.com/...",
-     *       "s3Key": "temp/session-id/timestamp-lab-results.pdf",
-     *       "expiresIn": 900
-     *     }
-     *   ]
-     * }
      */
     @PostMapping("/upload/initiate")
-    public ResponseEntity<DocumentUploadResponse> initiateUpload(
-            HttpServletRequest request,
+    public Mono<ResponseEntity<DocumentUploadResponse>> initiateUpload(
+            ServerHttpRequest request,
             @Valid @RequestBody DocumentUploadRequest uploadRequest
     ) {
         log.info("Initiating document upload for {} files", uploadRequest.getFiles().size());
 
-        UserSession session = sessionService.getSessionFromRequest(request)
-                .orElseThrow(() -> new UnauthorizedException("No valid session"));
-
-        DocumentUploadResponse response = documentService.initiateUpload(uploadRequest, session);
-
-        return ResponseEntity.ok(response);
+        return sessionService.getSessionFromRequest(request)
+                .switchIfEmpty(Mono.error(new UnauthorizedException("No valid session")))
+                .flatMap(session -> documentService.initiateUpload(uploadRequest, session)
+                        .map(ResponseEntity::ok));
     }
 
     /**
      * Finalize document upload
-     * Called after user uploads files to S3 and clicks "Upload" button
-     *
-     * POST /api/documents/upload/finalize
-     * Body: {
-     *   "tempDocumentIds": ["uuid1", "uuid2"],
-     *   "category": "MEDICAL_RECORD",
-     *   "description": "Lab results from annual checkup",
-     *   "tags": ["lab", "annual"]
-     * }
-     *
-     * Response: [
-     *   { documentId, fileName, category, uploadedAt, ... }
-     * ]
      */
     @PostMapping("/upload/finalize")
-    public ResponseEntity<List<UserDocument>> finalizeUpload(
-            HttpServletRequest request,
+    public Mono<ResponseEntity<List<UserDocument>>> finalizeUpload(
+            ServerHttpRequest request,
             @Valid @RequestBody DocumentFinalizeRequest finalizeRequest
     ) {
         log.info("Finalizing upload for {} documents", finalizeRequest.getTempDocumentIds().size());
 
-        UserSession session = sessionService.getSessionFromRequest(request)
-                .orElseThrow(() -> new UnauthorizedException("No valid session"));
-
-        List<UserDocument> userDocuments = documentService.finalizeUpload(finalizeRequest, session);
-
-        return ResponseEntity.ok(userDocuments);
+        return sessionService.getSessionFromRequest(request)
+                .switchIfEmpty(Mono.error(new UnauthorizedException("No valid session")))
+                .flatMap(session -> documentService.finalizeUpload(finalizeRequest, session)
+                        .map(ResponseEntity::ok));
     }
 
     /**
      * Search/list documents with filters
-     *
-     * POST /api/documents/search
-     * Body: {
-     *   "ownerIdType": "EID",
-     *   "ownerIdValue": "E123456",
-     *   "searchQuery": "lab",
-     *   "categories": ["MEDICAL_RECORD"],
-     *   "uploadedAfter": "2024-01-01T00:00:00Z",
-     *   "includeSensitive": true,
-     *   "page": 0,
-     *   "size": 20,
-     *   "sortBy": "uploadedAt",
-     *   "sortDirection": "DESC"
-     * }
      */
     @PostMapping("/search")
-    public ResponseEntity<Page<UserDocument>> searchDocuments(
-            HttpServletRequest request,
+    public Mono<ResponseEntity<Page<UserDocument>>> searchDocuments(
+            ServerHttpRequest request,
             @Valid @RequestBody DocumentSearchRequest searchRequest
     ) {
         log.info("Searching documents for owner: {}={}",
                 searchRequest.getOwnerIdType(), searchRequest.getOwnerIdValue());
 
-        UserSession session = sessionService.getSessionFromRequest(request)
-                .orElseThrow(() -> new UnauthorizedException("No valid session"));
-
-        Page<UserDocument> documents = documentService.searchDocuments(searchRequest, session);
-
-        return ResponseEntity.ok(documents);
+        return sessionService.getSessionFromRequest(request)
+                .switchIfEmpty(Mono.error(new UnauthorizedException("No valid session")))
+                .flatMap(session -> documentService.searchDocuments(searchRequest, session)
+                        .map(ResponseEntity::ok));
     }
 
     /**
      * Get download URL for a document
-     *
-     * GET /api/documents/{documentId}/download
-     *
-     * Response: {
-     *   "downloadUrl": "https://s3.amazonaws.com/...",
-     *   "expiresIn": 900
-     * }
      */
     @GetMapping("/{documentId}/download")
-    public ResponseEntity<Map<String, Object>> getDownloadUrl(
-            HttpServletRequest request,
+    public Mono<ResponseEntity<Map<String, Object>>> getDownloadUrl(
+            ServerHttpRequest request,
             @PathVariable String documentId
     ) {
         log.info("Generating download URL for document: {}", documentId);
 
-        UserSession session = sessionService.getSessionFromRequest(request)
-                .orElseThrow(() -> new UnauthorizedException("No valid session"));
-
-        String downloadUrl = documentService.getDownloadUrl(documentId, session);
-
-        return ResponseEntity.ok(Map.of(
-                "downloadUrl", downloadUrl,
-                "expiresIn", 15 * 60 // 15 minutes
-        ));
+        return sessionService.getSessionFromRequest(request)
+                .switchIfEmpty(Mono.error(new UnauthorizedException("No valid session")))
+                .flatMap(session -> documentService.getDownloadUrl(documentId, session)
+                        .map(downloadUrl -> ResponseEntity.ok(Map.of(
+                                "downloadUrl", downloadUrl,
+                                "expiresIn", 15 * 60 // 15 minutes
+                        ))));
     }
 
     /**
      * Delete a document (soft delete)
-     *
-     * DELETE /api/documents/{documentId}
      */
     @DeleteMapping("/{documentId}")
-    public ResponseEntity<Void> deleteDocument(
-            HttpServletRequest request,
+    public Mono<ResponseEntity<Void>> deleteDocument(
+            ServerHttpRequest request,
             @PathVariable String documentId
     ) {
         log.info("Deleting document: {}", documentId);
 
-        UserSession session = sessionService.getSessionFromRequest(request)
-                .orElseThrow(() -> new UnauthorizedException("No valid session"));
-
-        documentService.deleteDocument(documentId, session);
-
-        return ResponseEntity.noContent().build();
+        return sessionService.getSessionFromRequest(request)
+                .switchIfEmpty(Mono.error(new UnauthorizedException("No valid session")))
+                .flatMap(session -> documentService.deleteDocument(documentId, session)
+                        .thenReturn(ResponseEntity.noContent().<Void>build()));
     }
 
     /**
      * Get document categories
-     *
-     * GET /api/documents/categories
      */
     @GetMapping("/categories")
-    public ResponseEntity<List<Map<String, String>>> getCategories() {
+    public Mono<ResponseEntity<List<Map<String, String>>>> getCategories() {
         List<Map<String, String>> categories = List.of(
                 Map.of("value", "MEDICAL_RECORD", "label", "Medical Record"),
                 Map.of("value", "LAB_RESULT", "label", "Lab Result"),
@@ -200,6 +132,6 @@ public class DocumentController {
                 Map.of("value", "OTHER", "label", "Other")
         );
 
-        return ResponseEntity.ok(categories);
+        return Mono.just(ResponseEntity.ok(categories));
     }
 }
