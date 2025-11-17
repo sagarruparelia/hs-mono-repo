@@ -10,14 +10,14 @@ export default defineConfig(() => ({
   cacheDir: '../../node_modules/.vite/apps/mfe-profile',
   server: {
     port: 4203,
-    host: 'localhost',
+    host: '0.0.0.0',  // Bind to all interfaces (IPv4 + IPv6)
     fs: {
       allow: ['../..'],
     },
   },
   preview: {
     port: 4203,
-    host: 'localhost',
+    host: '0.0.0.0',  // Bind to all interfaces
   },
   plugins: [
     federation({

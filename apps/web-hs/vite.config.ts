@@ -10,14 +10,14 @@ export default defineConfig(() => ({
   cacheDir: '../../node_modules/.vite/apps/web-hs',
   server: {
     port: 4201,
-    host: 'localhost',
+    host: '0.0.0.0',  // Bind to all interfaces (IPv4 + IPv6)
     fs: {
       allow: ['../..'],
     },
   },
   preview: {
     port: 4201,
-    host: 'localhost',
+    host: '0.0.0.0',  // Bind to all interfaces (IPv4 + IPv6)
   },
   plugins: [
     federation({
