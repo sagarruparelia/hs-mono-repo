@@ -4,21 +4,18 @@ services:
   # MongoDB
   mongodb:
     image: mongo:7
-    container_name: hs-mongodb
+    container_name: bff-mongodb
     restart: unless-stopped
     ports:
       - "27017:27017"
     environment:
-      MONGO_INITDB_ROOT_USERNAME: admin
-      MONGO_INITDB_ROOT_PASSWORD: password123
-      MONGO_INITDB_DATABASE: hs_mono_repo
+      MONGO_INITDB_DATABASE: final_bff
     volumes:
       - mongodb_data:/data/db
-      - ./docker/mongodb/init-scripts:/docker-entrypoint-initdb.d:ro
     networks:
-      - hs-network
+      - bff-network
     healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
       interval: 10s
       timeout: 5s
       retries: 5
@@ -26,15 +23,15 @@ services:
   # Redis
   redis:
     image: redis:7-alpine
-    container_name: hs-redis
+    container_name: bff-redis
     restart: unless-stopped
     ports:
       - "6379:6379"
-    command: redis-server --appendonly yes --requirepass redis123
+    command: redis-server --appendonly yes
     volumes:
       - redis_data:/data
     networks:
-      - hs-network
+      - bff-network
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -44,117 +41,75 @@ services:
   # Spring Boot BFF
   bff:
     build:
-      context: ./apps/bff
-      dockerfile: Dockerfile
-    container_name: hs-bff
+      context: .
+      dockerfile: apps/bff/Dockerfile
+    container_name: bff-app
     restart: unless-stopped
     ports:
       - "8080:8080"
     environment:
-      SPRING_PROFILES_ACTIVE: docker
-      SPRING_DATA_MONGODB_URI: mongodb://admin:password123@mongodb:27017/hs_mono_repo?authSource=admin
-      SPRING_DATA_REDIS_HOST: redis
-      SPRING_DATA_REDIS_PORT: 6379
-      SPRING_DATA_REDIS_PASSWORD: redis123
-      SERVER_PORT: 8080
+      # Spring Profile
+      SPRING_PROFILES_ACTIVE: ${APP_PROFILE:-dev}
+
+      # Database
+      MONGODB_URI: mongodb://mongodb:27017/final_bff
+      MONGODB_DATABASE: final_bff
+
+      # Redis
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      REDIS_SSL_ENABLED: false
+
+      # OIDC (from .env)
+      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID}
+      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET}
+      OIDC_ISSUER_URI: ${OIDC_ISSUER_URI}
+
+      # AWS
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      AWS_S3_BUCKET: ${AWS_S3_BUCKET}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+
+      # External Services
+      US_SERVICE_BASE_URL: ${US_SERVICE_BASE_URL}
+      US_SERVICE_CLIENT_ID: ${US_SERVICE_CLIENT_ID}
+      US_SERVICE_CLIENT_SECRET: ${US_SERVICE_CLIENT_SECRET}
+
+      PSN_SERVICE_BASE_URL: ${PSN_SERVICE_BASE_URL}
+      PSN_SERVICE_CLIENT_ID: ${PSN_SERVICE_CLIENT_ID}
+      PSN_SERVICE_CLIENT_SECRET: ${PSN_SERVICE_CLIENT_SECRET}
+
+      ELIGIBILITY_SERVICE_BASE_URL: ${ELIGIBILITY_SERVICE_BASE_URL}
+      ELIGIBILITY_SERVICE_CLIENT_ID: ${ELIGIBILITY_SERVICE_CLIENT_ID}
+      ELIGIBILITY_SERVICE_CLIENT_SECRET: ${ELIGIBILITY_SERVICE_CLIENT_SECRET}
+
+      # JVM Options
+      JAVA_OPTS: "-Xmx512m -Xms256m"
     depends_on:
       mongodb:
         condition: service_healthy
       redis:
         condition: service_healthy
     networks:
-      - hs-network
+      - bff-network
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/actuator/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 60s
-
-  # Profile MFE (for local testing)
-  mfe-profile:
-    image: node:20-alpine
-    container_name: hs-mfe-profile
-    restart: unless-stopped
-    working_dir: /app
-    ports:
-      - "4203:4203"
     volumes:
-      - .:/app
-      - node_modules_profile:/app/node_modules
-    command: sh -c "npm install && npx nx serve mfe-profile"
-    networks:
-      - hs-network
-    environment:
-      NODE_ENV: development
+      # Mount .env file if exists (for local development)
+      - ./apps/bff/.env:/app/.env:ro
 
-  # Summary MFE (for local testing)
-  mfe-summary:
-    image: node:20-alpine
-    container_name: hs-mfe-summary
-    restart: unless-stopped
-    working_dir: /app
-    ports:
-      - "4204:4204"
-    volumes:
-      - .:/app
-      - node_modules_summary:/app/node_modules
-    command: sh -c "npm install && npx nx serve mfe-summary"
-    networks:
-      - hs-network
-    environment:
-      NODE_ENV: development
-
-  # Web CL Shell (for local testing)
-  web-cl:
-    image: node:20-alpine
-    container_name: hs-web-cl
-    restart: unless-stopped
-    working_dir: /app
-    ports:
-      - "4202:4202"
-    volumes:
-      - .:/app
-      - node_modules_web_cl:/app/node_modules
-    command: sh -c "npm install && npx nx serve web-cl"
-    networks:
-      - hs-network
-    environment:
-      NODE_ENV: development
-      VITE_MFE_PROFILE_URL: http://localhost:4203
-      VITE_MFE_SUMMARY_URL: http://localhost:4204
-      VITE_API_BASE_URL: http://localhost:8080
-
-  # Web HS Shell (for local testing)
-  web-hs:
-    image: node:20-alpine
-    container_name: hs-web-hs
-    restart: unless-stopped
-    working_dir: /app
-    ports:
-      - "4201:4201"
-    volumes:
-      - .:/app
-      - node_modules_web_hs:/app/node_modules
-    command: sh -c "npm install && npx nx serve web-hs"
-    networks:
-      - hs-network
-    environment:
-      NODE_ENV: development
-      VITE_MFE_PROFILE_URL: http://localhost:4203
-      VITE_MFE_SUMMARY_URL: http://localhost:4204
-      VITE_API_BASE_URL: http://localhost:8080
+networks:
+  bff-network:
+    driver: bridge
 
 volumes:
   mongodb_data:
     driver: local
   redis_data:
     driver: local
-  node_modules_profile:
-  node_modules_summary:
-  node_modules_web_cl:
-  node_modules_web_hs:
-
-networks:
-  hs-network:
-    driver: bridge

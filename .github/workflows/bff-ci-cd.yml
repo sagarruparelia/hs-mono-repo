@@ -1,0 +1,230 @@
+name: BFF CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'apps/bff/**'
+      - 'apps/mfe-profile/**'
+      - 'apps/mfe-summary/**'
+      - 'libs/shared/**'
+      - '.github/workflows/bff-ci-cd.yml'
+  pull_request:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'apps/bff/**'
+      - 'apps/mfe-profile/**'
+      - 'apps/mfe-summary/**'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}/bff
+  JAVA_VERSION: '21'
+  NODE_VERSION: '20'
+
+jobs:
+  # Build and Test Custom Elements
+  build-custom-elements:
+    name: Build Custom Elements
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build mfe-profile
+        run: npx nx build-standalone mfe-profile
+
+      - name: Build mfe-summary
+        run: npx nx build-standalone mfe-summary
+
+      - name: Upload custom elements artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: custom-elements
+          path: |
+            dist/apps/mfe-profile/standalone/
+            dist/apps/mfe-summary/standalone/
+          retention-days: 1
+
+  # Build and Test Spring Boot Application
+  build-and-test:
+    name: Build and Test BFF
+    runs-on: ubuntu-latest
+    needs: build-custom-elements
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: Download custom elements
+        uses: actions/download-artifact@v4
+        with:
+          name: custom-elements
+          path: dist/apps/
+
+      - name: Copy custom elements to static resources
+        run: |
+          mkdir -p apps/bff/src/main/resources/static
+          cp -r dist/apps/mfe-profile/standalone apps/bff/src/main/resources/static/mfe-profile
+          cp -r dist/apps/mfe-summary/standalone apps/bff/src/main/resources/static/mfe-summary
+
+      - name: Run tests
+        run: |
+          cd apps/bff
+          ./mvnw clean test
+
+      - name: Build JAR
+        run: |
+          cd apps/bff
+          ./mvnw clean package -DskipTests
+
+      - name: Upload JAR artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bff-jar
+          path: apps/bff/target/*.jar
+          retention-days: 1
+
+  # Build Docker Image
+  build-docker-image:
+    name: Build Docker Image
+    runs-on: ubuntu-latest
+    needs: [build-custom-elements, build-and-test]
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=sha,prefix={{branch}}-
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./apps/bff/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64,linux/arm64
+
+      - name: Generate SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+
+  # Deploy to Staging
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: build-docker-image
+    if: github.ref == 'refs/heads/develop' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging')
+    environment:
+      name: staging
+      url: https://staging.example.com
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to staging
+        run: |
+          echo "Deploying to staging environment"
+          # Add your deployment commands here
+          # Examples:
+          # - kubectl apply -f k8s/staging/
+          # - aws ecs update-service ...
+          # - docker-compose up -d
+
+  # Deploy to Production
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: build-docker-image
+    if: github.ref == 'refs/heads/main' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production')
+    environment:
+      name: production
+      url: https://app.example.com
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to production
+        run: |
+          echo "Deploying to production environment"
+          # Add your deployment commands here
+          # Examples:
+          # - kubectl apply -f k8s/production/
+          # - aws ecs update-service ...
+          # - Trigger deployment pipeline
+
+  # Security Scanning
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    needs: build-docker-image
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    steps:
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+
+      - name: Upload Trivy results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'trivy-results.sarif'
