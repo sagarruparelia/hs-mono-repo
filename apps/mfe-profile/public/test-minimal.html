@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Minimal Custom Element Test</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      padding: 20px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Test 1: Minimal Custom Element (NO React, NO dependencies)</h1>
+  <p>This should definitely work:</p>
+  <minimal-profile theme="light" user-id-value="123"></minimal-profile>
+
+  <hr>
+
+  <h1>Test 2: Real Custom Element (with React + dependencies)</h1>
+  <p>This is the one that's having issues:</p>
+  <mfe-profile theme="light" user-id-value="123"></mfe-profile>
+
+  <hr>
+  <div id="log" style="background: #f5f5f5; padding: 15px; font-family: monospace; font-size: 12px;">
+    <strong>Console Log:</strong><br>
+  </div>
+
+  <script type="module">
+    const logDiv = document.getElementById('log');
+    const originalLog = console.log;
+    const originalError = console.error;
+
+    console.log = function(...args) {
+      originalLog.apply(console, args);
+      logDiv.innerHTML += args.join(' ') + '<br>';
+    };
+
+    console.error = function(...args) {
+      originalError.apply(console, args);
+      logDiv.innerHTML += '<span style="color: red;">' + args.join(' ') + '</span><br>';
+    };
+
+    console.log('=== Starting tests ===');
+
+    // Test 1: Minimal custom element (no dependencies)
+    console.log('[Test 1] Loading minimal custom element...');
+    import('/src/ce-minimal.tsx')
+      .then(() => console.log('[Test 1] ✓ Minimal element loaded successfully'))
+      .catch(err => console.error('[Test 1] ✗ Failed:', err.message));
+
+    // Test 2: Real custom element (with React)
+    console.log('[Test 2] Loading real custom element...');
+    const startTime = Date.now();
+    import('/src/ce.tsx')
+      .then(() => {
+        const elapsed = Date.now() - startTime;
+        console.log(`[Test 2] ✓ Real element loaded successfully (took ${elapsed}ms)`);
+      })
+      .catch(err => {
+        const elapsed = Date.now() - startTime;
+        console.error(`[Test 2] ✗ Failed after ${elapsed}ms:`, err.message);
+      });
+
+    // Timeout check
+    setTimeout(() => {
+      const elapsed = Date.now() - startTime;
+      if (!customElements.get('mfe-profile')) {
+        console.error(`[Test 2] ⚠ Still loading after ${elapsed}ms - likely hung`);
+      }
+    }, 5000);
+  </script>
+</body>
+</html>

@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MFE Profile Test</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      padding: 20px;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    .status {
+      padding: 10px;
+      margin: 10px 0;
+      border-radius: 4px;
+      background: #f0f0f0;
+    }
+    .error { background: #ffebee; color: #c62828; }
+    .success { background: #e8f5e9; color: #2e7d32; }
+  </style>
+</head>
+<body>
+<h1>Profile MFE Test</h1>
+
+<div id="status" class="status">Loading custom element...</div>
+
+<!-- Use the custom element -->
+<mfe-profile
+  theme="light"
+  user-id-type="EID"
+  user-id-value="12345"
+  use-router="false">
+</mfe-profile>
+
+<!-- Load the custom element -->
+<script type="module">
+  const statusDiv = document.getElementById('status');
+
+  // Check if custom element is defined before loading
+  if (customElements.get('mfe-profile')) {
+    statusDiv.textContent = 'Custom element already registered!';
+    statusDiv.className = 'status success';
+  } else {
+    // Import the custom element module
+    console.log('Custom element loading...');
+
+    // Try standalone entry point first
+    import('/src/standalone.tsx')
+      .then(() => {
+        console.log('✓ Standalone bundle loaded');
+        statusDiv.textContent = '✓ Custom element loaded successfully!';
+        statusDiv.className = 'status success';
+      })
+      .catch(err => {
+        console.error('✗ Standalone failed, trying direct import:', err);
+
+        // Fallback to direct import
+        return import('/src/ce.tsx');
+      })
+      .then(() => {
+        if (!statusDiv.classList.contains('success')) {
+          statusDiv.textContent = '✓ Custom element loaded (fallback)!';
+          statusDiv.className = 'status success';
+          console.log('✓ Direct import succeeded');
+        }
+      })
+      .catch(err => {
+        statusDiv.textContent = `✗ Failed to load: ${err.message}`;
+        statusDiv.className = 'status error';
+        console.error('✗ All import methods failed:', err);
+        console.error('Stack:', err.stack);
+      });
+  }
+
+  // Listen for custom events
+  document.addEventListener('profile-update', (e) => {
+    console.log('Profile updated:', e.detail);
+  });
+
+  document.addEventListener('route-change', (e) => {
+    console.log('Route changed:', e.detail);
+  });
+</script>
+</body>
+</html>

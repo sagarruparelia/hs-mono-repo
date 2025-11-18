@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Simple MFE Test</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      padding: 20px;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    .debug {
+      background: #f5f5f5;
+      padding: 15px;
+      margin: 20px 0;
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: 12px;
+    }
+    .success { color: green; }
+    .error { color: red; }
+    mfe-profile {
+      display: block;
+      min-height: 200px;
+      border: 2px dashed #ccc;
+      padding: 20px;
+      margin: 20px 0;
+    }
+  </style>
+</head>
+<body>
+  <h1>MFE Profile Custom Element Test</h1>
+
+  <div class="debug">
+    <div><strong>Debug Info:</strong></div>
+    <div id="debug-log"></div>
+  </div>
+
+  <h2>Custom Element:</h2>
+  <mfe-profile
+    theme="light"
+    user-id-value="12345">
+  </mfe-profile>
+
+  <script type="module">
+    const debugLog = document.getElementById('debug-log');
+
+    function log(message, type = 'info') {
+      const div = document.createElement('div');
+      div.className = type;
+      div.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+      debugLog.appendChild(div);
+      console.log(message);
+    }
+
+    log('Starting custom element load...');
+
+    // Check initial state
+    const element = document.querySelector('mfe-profile');
+    log(`Custom element in DOM: ${element ? 'YES' : 'NO'}`);
+    log(`Custom element defined: ${customElements.get('mfe-profile') ? 'YES' : 'NO'}`);
+
+    // Import the module
+    import('/src/ce.tsx')
+      .then(() => {
+        log('✓ Module imported successfully', 'success');
+        log(`Custom element now defined: ${customElements.get('mfe-profile') ? 'YES' : 'NO'}`, 'success');
+
+        // Check if element has any content
+        setTimeout(() => {
+          const element = document.querySelector('mfe-profile');
+          log(`Element innerHTML length: ${element.innerHTML.length}`);
+          log(`Element has shadow root: ${element.shadowRoot ? 'YES' : 'NO'}`);
+          log(`Element children count: ${element.children.length}`);
+        }, 1000);
+      })
+      .catch(err => {
+        log(`✗ Failed to import: ${err.message}`, 'error');
+        log(`Stack: ${err.stack}`, 'error');
+      });
+
+    // Listen for events
+    document.addEventListener('profile-update', (e) => {
+      log(`Event: profile-update - ${JSON.stringify(e.detail)}`);
+    });
+  </script>
+</body>
+</html>

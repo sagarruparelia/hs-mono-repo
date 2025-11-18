@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Basic Custom Element Test</title>
+</head>
+<body>
+  <h1>Test 1: Simple Custom Element (should work)</h1>
+  <simple-profile theme="light" user-id-value="123"></simple-profile>
+
+  <hr>
+
+  <h1>Test 2: Real MFE Profile Custom Element</h1>
+  <mfe-profile theme="light" user-id-value="123"></mfe-profile>
+
+  <script type="module">
+    console.log('=== Starting tests ===');
+
+    // Test 1: Simple custom element
+    console.log('Loading simple custom element...');
+    import('/ce-simple.tsx')
+      .then(() => console.log('✓ Simple element loaded'))
+      .catch(err => console.error('✗ Simple element failed:', err));
+
+    // Test 2: Real custom element
+    console.log('Loading real custom element...');
+    import('/src/ce.tsx')
+      .then(() => console.log('✓ Real element loaded'))
+      .catch(err => console.error('✗ Real element failed:', err));
+  </script>
+</body>
+</html>

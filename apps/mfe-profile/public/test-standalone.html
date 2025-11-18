@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Standalone Custom Element</title>
+  <link rel="stylesheet" href="/custom-element.css">
+  <style>
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      padding: 20px;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    .status {
+      padding: 10px;
+      margin: 10px 0;
+      border-radius: 4px;
+      background: #e8f5e9;
+      color: #2e7d32;
+    }
+  </style>
+</head>
+<body>
+  <h1>MFE Profile - Standalone Bundle</h1>
+
+  <div class="status">
+    ✓ Using standalone bundle (no Module Federation conflicts)
+  </div>
+
+  <!-- The custom element -->
+  <mfe-profile
+    theme="light"
+    user-id-value="12345">
+  </mfe-profile>
+
+  <!-- Load the standalone bundle -->
+  <script type="module" src="/custom-element.mjs"></script>
+
+  <script>
+    console.log('Page loaded, custom element script loading...');
+
+    // Check if it registered
+    setTimeout(() => {
+      if (customElements.get('mfe-profile')) {
+        console.log('✓ Custom element registered successfully!');
+      } else {
+        console.error('✗ Custom element not registered');
+      }
+    }, 1000);
+
+    // Listen for events
+    document.addEventListener('profile-update', (e) => {
+      console.log('Profile updated:', e.detail);
+    });
+  </script>
+</body>
+</html>

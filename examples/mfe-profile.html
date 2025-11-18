@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MFE Profile Test</title>
+</head>
+<body>
+<h1>Profile MFE Test</h1>
+
+<!-- Use the custom element -->
+<mfe-profile
+  theme="light"
+  user-id-type="EID"
+  user-id-value="12345"
+  use-router="true"
+  route="/">
+</mfe-profile>
+
+<!-- Load the custom element from the dev server -->
+<script type="module" src="http://localhost:4203/src/ce.tsx"></script>
+</body>
+</html>

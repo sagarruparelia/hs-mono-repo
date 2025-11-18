@@ -1,21 +1,19 @@
 /// <reference types='vitest' />
 import { defineConfig } from 'vite';
 import { nxViteTsPaths } from '@nx/vite/plugins/nx-tsconfig-paths.plugin';
-import { join } from 'path';
 
 export default defineConfig({
-  root: __dirname,
   cacheDir: '../../../node_modules/.vite/libs/shared/api-client',
 
   plugins: [nxViteTsPaths()],
 
   // Library mode configuration
   build: {
-    outDir: join(__dirname, '../../../dist/libs/shared/api-client'),
+    outDir: '../../../dist/libs/shared/api-client',
     emptyOutDir: true,
     reportCompressedSize: true,
     lib: {
-      entry: join(__dirname, 'src/index.ts'),
+      entry: 'src/index.ts',
       name: 'SharedApiClient',
       fileName: 'index',
       formats: ['es'],
@@ -33,7 +31,7 @@ export default defineConfig({
     reporters: ['default'],
     coverage: {
       reportsDirectory: '../../../coverage/libs/shared/api-client',
-      provider: 'v8',
+      provider: 'v8' as const,
     },
   },
 });

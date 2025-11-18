@@ -5,5 +5,17 @@
   "projectType": "application",
   "tags": [],
   "// targets": "to see all targets run: nx show project mfe-summary --web",
-  "targets": {}
+  "targets": {
+    "build-standalone": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "NODE_ENV=production vite build --config vite.config.standalone.ts --mode production",
+        "cwd": "apps/mfe-summary"
+      },
+      "cache": true,
+      "outputs": [
+        "{workspaceRoot}/dist/apps/mfe-summary/standalone"
+      ]
+    }
+  }
 }

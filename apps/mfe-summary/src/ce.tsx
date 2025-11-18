@@ -1,13 +1,10 @@
 /**
- * Custom Element (Web Component) wrapper for SummaryPage with Router
- * This allows the micro-frontend to be used as a web component in any framework
- *
- * Supports both legacy (single page) and new (routed) modes
+ * Custom Element (Web Component) wrapper
+ * Auto-generated - customize as needed
  */
 
 import { createRoot, Root } from 'react-dom/client';
 import SummaryPage from './components/SummaryPage';
-import SummaryPageWithRouter from './components/SummaryPageWithRouter';
 
 class SummaryPageElement extends HTMLElement {
   private root: Root | null = null;
@@ -15,15 +12,8 @@ class SummaryPageElement extends HTMLElement {
   static get observedAttributes() {
     return [
       'theme',
-      'user-id-type',
-      'user-id-value',
-      'logged-in-user-id-type',
-      'logged-in-user-id-value',
-      'time-range',
-      'route',
-      'use-router',
-      // Legacy support
       'user-id',
+      // Add your custom attributes here
     ];
   }
 
@@ -43,71 +33,27 @@ class SummaryPageElement extends HTMLElement {
 
   private mount() {
     const theme = (this.getAttribute('theme') as 'light' | 'dark') || 'light';
-
-    // New user identification attributes
-    const userIdType = this.getAttribute('user-id-type') || 'EID';
-    const userIdValue = this.getAttribute('user-id-value') || this.getAttribute('user-id') || undefined;
-    const loggedInUserIdType = this.getAttribute('logged-in-user-id-type') || undefined;
-    const loggedInUserIdValue = this.getAttribute('logged-in-user-id-value') || undefined;
-
-    const timeRange = (this.getAttribute('time-range') as 'week' | 'month' | 'year') || 'month';
-    const route = this.getAttribute('route') || '/';
-    const useRouter = this.getAttribute('use-router') === 'true';
+    const userId = this.getAttribute('user-id') || '';
 
     if (!this.root) {
       this.root = createRoot(this);
     }
 
-    // Use routed version if route or use-router attribute is present
-    if (useRouter || this.hasAttribute('route')) {
-      this.root.render(
-        <SummaryPageWithRouter
-          theme={theme}
-          userIdType={userIdType}
-          userIdValue={userIdValue}
-          loggedInUserIdType={loggedInUserIdType}
-          loggedInUserIdValue={loggedInUserIdValue}
-          route={route}
-          onDataLoad={(data) => {
-            this.dispatchEvent(
-              new CustomEvent('summary-data-load', {
-                detail: data,
-                bubbles: true,
-                composed: true,
-              })
-            );
-          }}
-          onRouteChange={(newRoute) => {
-            // Dispatch route change event for host site
-            this.dispatchEvent(
-              new CustomEvent('route-change', {
-                detail: { route: newRoute, from: route },
-                bubbles: true,
-                composed: true,
-              })
-            );
-          }}
-        />
-      );
-    } else {
-      // Legacy mode - single page without router
-      this.root.render(
-        <SummaryPage
-          theme={theme}
-          userId={userIdValue}
-          timeRange={timeRange}
-          onDataLoad={(data) => {
-            this.dispatchEvent(
-              new CustomEvent('summary-data-load', {
-                detail: data,
-                bubbles: true,
-                composed: true,
-              })
-            );
-          }}
-        />
-      );
-    }
+    this.root.render(
+      <SummaryPage
+        theme={theme}
+        userId={userId}
+        onUpdate={(data) => {
+          this.dispatchEvent(
+            new CustomEvent('component-update', {
+              detail: data,
+              bubbles: true,
+              composed: true,
+            })
+          );
+        }}
+      />
+    );
   }
 
   private unmount() {

@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MFE Profile - Script Tag Test</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      padding: 20px;
+    }
+    mfe-profile {
+      display: block;
+      border: 2px solid #ddd;
+      padding: 20px;
+      margin: 20px 0;
+    }
+  </style>
+</head>
+<body>
+  <h1>MFE Profile - Direct Script Tag</h1>
+
+  <!-- The custom element -->
+  <mfe-profile
+    theme="light"
+    user-id-value="12345">
+  </mfe-profile>
+
+  <!-- Load dependencies first -->
+  <script type="module">
+    // Just load the ce.tsx file directly as a module
+    // Vite will handle all the transformations and dependencies
+    import '/src/ce.tsx';
+    console.log('✓ Custom element script loaded');
+  </script>
+</body>
+</html>
